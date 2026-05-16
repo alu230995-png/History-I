@@ -5,6 +5,6 @@
     "search.exclude": {
         "**/.vscode": true
     },
-    "luau-lsp.sourcemap.rojoProjectFile": "lobby.project.json",
+    "luau-lsp.sourcemap.rojoProjectFile": "default.project.json",
     "stylua.targetReleaseVersion": "latest"
 }
