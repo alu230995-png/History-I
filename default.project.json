@@ -1,0 +1,30 @@
+{
+  "name": "History-I",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Packages": {
+        "$path": "Match/packages"
+      },
+
+      "Shared": {
+        "$path": "Match/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "Server": {
+        "$path": "Match/server"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "Match/client"
+        }
+      }
+    }
+  }
+}

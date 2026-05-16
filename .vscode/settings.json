@@ -1,0 +1,10 @@
+{
+    "files.exclude": {
+        "**/.vscode": false,
+    },
+    "search.exclude": {
+        "**/.vscode": true
+    },
+    "luau-lsp.sourcemap.rojoProjectFile": "lobby.project.json",
+    "stylua.targetReleaseVersion": "latest"
+}
