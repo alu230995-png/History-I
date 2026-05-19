@@ -3,6 +3,7 @@ local PlayerStates = {
 	Lobby = "Lobby",
 	LoadingMatch = "LoadingMatch",
 	Playing = "Playing",
+	Building = "Building",
 	Defeated = "Defeated",
 	Spectating = "Spectating",
 }
@@ -14,6 +15,7 @@ PlayerStates.AllowedTransitions = {
 
 	[PlayerStates.Lobby] = {
 		[PlayerStates.LoadingMatch] = true,
+		[PlayerStates.Building] = true,
 	},
 
 	[PlayerStates.LoadingMatch] = {
@@ -22,9 +24,17 @@ PlayerStates.AllowedTransitions = {
 	},
 
 	[PlayerStates.Playing] = {
+		[PlayerStates.Building] = true,
 		[PlayerStates.Defeated] = true,
 		[PlayerStates.Spectating] = true,
 		[PlayerStates.Lobby] = true,
+	},
+
+	[PlayerStates.Building] = {
+		[PlayerStates.Lobby] = true,
+		[PlayerStates.Playing] = true,
+		[PlayerStates.Defeated] = true,
+		[PlayerStates.Spectating] = true,
 	},
 
 	[PlayerStates.Defeated] = {

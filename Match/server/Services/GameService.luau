@@ -90,6 +90,10 @@ function GameService.Client:GetMatchState(_player: Player): string
 	return self.Server._matchMachine:GetState()
 end
 
+function GameService.Client:SetBuildingMode(player: Player, enabled: any): { ok: boolean, state: string?, reason: string? }
+	return self.Server:_setBuildingMode(player, enabled == true)
+end
+
 function GameService:KnitInit()
 	Players.CharacterAutoLoads = false
 	StarterPlayer.DevTouchMovementMode = Enum.DevTouchMovementMode.Thumbstick
@@ -98,6 +102,7 @@ function GameService:KnitInit()
 	self._trove = Trove.new()
 	self._playerMachines = {}
 	self._playerTroves = {}
+	self._preBuildingStates = {}
 	self._drones = {}
 	self._lastVelocityRequest = {}
 
@@ -130,6 +135,61 @@ function GameService:KnitInit()
 	self._trove:Add(RunService.Heartbeat:Connect(function()
 		self:_clampDrones()
 	end))
+end
+
+function GameService:GetPlayerState(player: Player): string?
+	local machine = self._playerMachines[player]
+
+	return if machine ~= nil then machine:GetState() else nil
+end
+
+function GameService:_setBuildingMode(player: Player, enabled: boolean): { ok: boolean, state: string?, reason: string? }
+	local machine = self._playerMachines[player]
+	if machine == nil then
+		return { ok = false, reason = "MissingPlayerState" }
+	end
+
+	local currentState = machine:GetState()
+	if enabled then
+		if currentState == PlayerStates.Building then
+			return { ok = true, state = currentState }
+		end
+
+		if currentState ~= PlayerStates.Lobby and currentState ~= PlayerStates.Playing then
+			return { ok = false, state = currentState, reason = "InvalidState" }
+		end
+
+		self._preBuildingStates[player] = currentState
+		local ok = machine:TransitionTo(PlayerStates.Building, {
+			PreviousState = currentState,
+		})
+
+		return {
+			ok = ok,
+			state = machine:GetState(),
+			reason = if ok then nil else "TransitionRejected",
+		}
+	end
+
+	if currentState ~= PlayerStates.Building then
+		return { ok = true, state = currentState }
+	end
+
+	local previousState = self._preBuildingStates[player]
+	if previousState ~= PlayerStates.Lobby and previousState ~= PlayerStates.Playing then
+		previousState = PlayerStates.Playing
+	end
+
+	self._preBuildingStates[player] = nil
+	local ok = machine:TransitionTo(previousState, {
+		PreviousState = currentState,
+	})
+
+	return {
+		ok = ok,
+		state = machine:GetState(),
+		reason = if ok then nil else "TransitionRejected",
+	}
 end
 
 function GameService:KnitStart()
@@ -339,6 +399,7 @@ function GameService:_handlePlayerRemoving(player: Player)
 
 	self._playerTroves[player] = nil
 	self._playerMachines[player] = nil
+	self._preBuildingStates[player] = nil
 	self._drones[player] = nil
 	self._lastVelocityRequest[player] = nil
 end

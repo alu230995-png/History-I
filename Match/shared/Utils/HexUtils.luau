@@ -33,6 +33,8 @@ export type SocketPositions = {
 	Edge: { Vector3 },
 }
 
+export type PlacementMode = "Center" | "Edge"
+
 function HexUtils.createAxial(q: number, r: number): AxialCoord
 	return {
 		q = q,
@@ -165,6 +167,155 @@ function HexUtils.getSocketPositions(
 		Center = center,
 		Edge = edgePositions,
 	}
+end
+
+function HexUtils.getSocketPositionsFromPart(hexPart: BasePart): SocketPositions
+	local center = hexPart.CFrame:PointToWorldSpace(Vector3.new(0, hexPart.Size.Y * 0.5, 0))
+	local edgePositions = table.create(6)
+	local edgeCenterRadius = hexPart.Size.X * 0.5
+
+	for index = 1, 6 do
+		local angle = math.rad((index - 1) * 60)
+		local localOffset = Vector3.new(edgeCenterRadius * math.cos(angle), hexPart.Size.Y * 0.5, edgeCenterRadius * math.sin(angle))
+		edgePositions[index] = hexPart.CFrame:PointToWorldSpace(localOffset)
+	end
+
+	return {
+		Center = center,
+		Edge = edgePositions,
+	}
+end
+
+function HexUtils.getEdgeIndex(socketName: any): number?
+	if typeof(socketName) ~= "string" then
+		return nil
+	end
+
+	return tonumber(string.match(socketName, "^Edge([1-6])$"))
+end
+
+function HexUtils.getEdgeSocketName(edgeIndex: number): string
+	return `Edge{((edgeIndex - 1) % 6) + 1}`
+end
+
+function HexUtils.getNextEdgeSocketName(socketName: string, direction: number): string
+	local edgeIndex = HexUtils.getEdgeIndex(socketName) or 1
+	local step = if direction < 0 then -1 else 1
+
+	return HexUtils.getEdgeSocketName(edgeIndex + step)
+end
+
+function HexUtils.getSocketPosition(
+	q: number,
+	r: number,
+	hexY: number,
+	socketName: string,
+	gridConfig: GridConfigLike
+): Vector3
+	local socketPositions = HexUtils.getSocketPositions(q, r, hexY, gridConfig)
+
+	if socketName == "Center" then
+		return socketPositions.Center
+	end
+
+	local edgeIndex = HexUtils.getEdgeIndex(socketName)
+	if edgeIndex == nil then
+		return socketPositions.Center
+	end
+
+	return socketPositions.Edge[edgeIndex]
+end
+
+function HexUtils.getSocketPositionFromPart(hexPart: BasePart, socketName: string): Vector3
+	local socketPositions = HexUtils.getSocketPositionsFromPart(hexPart)
+
+	if socketName == "Center" then
+		return socketPositions.Center
+	end
+
+	local edgeIndex = HexUtils.getEdgeIndex(socketName)
+	if edgeIndex == nil then
+		return socketPositions.Center
+	end
+
+	return socketPositions.Edge[edgeIndex]
+end
+
+function HexUtils.getEdgeYawDegrees(socketName: string): number
+	local edgeIndex = HexUtils.getEdgeIndex(socketName) or 1
+	local outwardAngle = (edgeIndex - 1) * 60
+
+	return (outwardAngle + 90) % 360
+end
+
+function HexUtils.getEdgeYawDegreesFromPart(hexPart: BasePart, socketName: string): number
+	local edgeIndex = HexUtils.getEdgeIndex(socketName) or 1
+	local angle = math.rad((edgeIndex - 1) * 60)
+	local normal = hexPart.CFrame:VectorToWorldSpace(Vector3.new(math.cos(angle), 0, math.sin(angle)))
+	local outwardAngle = math.deg(math.atan2(normal.Z, normal.X))
+
+	return (outwardAngle + 90) % 360
+end
+
+function HexUtils.getNearestEdgeSocket(
+	hitPosition: Vector3,
+	q: number,
+	r: number,
+	hexY: number,
+	gridConfig: GridConfigLike
+): string
+	local socketPositions = HexUtils.getSocketPositions(q, r, hexY, gridConfig)
+	local nearestSocket = "Edge1"
+	local nearestDistance = (hitPosition - socketPositions.Edge[1]).Magnitude
+
+	for index = 2, 6 do
+		local distance = (hitPosition - socketPositions.Edge[index]).Magnitude
+		if distance < nearestDistance then
+			nearestSocket = `Edge{index}`
+			nearestDistance = distance
+		end
+	end
+
+	return nearestSocket
+end
+
+function HexUtils.getNearestSocketForPlacementMode(
+	hitPosition: Vector3,
+	q: number,
+	r: number,
+	hexY: number,
+	gridConfig: GridConfigLike,
+	placementMode: PlacementMode
+): string
+	if placementMode == "Edge" then
+		return HexUtils.getNearestEdgeSocket(hitPosition, q, r, hexY, gridConfig)
+	end
+
+	return "Center"
+end
+
+function HexUtils.getNearestSocketForPlacementModeFromPart(
+	hitPosition: Vector3,
+	hexPart: BasePart,
+	placementMode: PlacementMode
+): string
+	if placementMode ~= "Edge" then
+		return "Center"
+	end
+
+	local socketPositions = HexUtils.getSocketPositionsFromPart(hexPart)
+	local nearestSocket = "Edge1"
+	local nearestDistance = (hitPosition - socketPositions.Edge[1]).Magnitude
+
+	for index = 2, 6 do
+		local distance = (hitPosition - socketPositions.Edge[index]).Magnitude
+		if distance < nearestDistance then
+			nearestSocket = `Edge{index}`
+			nearestDistance = distance
+		end
+	end
+
+	return nearestSocket
 end
 
 function HexUtils.getNearestSocket(hitPosition: Vector3, q: number, r: number, hexY: number, gridConfig: GridConfigLike): string
