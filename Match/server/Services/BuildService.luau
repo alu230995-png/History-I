@@ -24,6 +24,7 @@ type ResourceState = {
 type SocketState = {
 	Owner: Player?,
 	Building: string?,
+	BlockedReason: string?,
 	HP: number,
 	ModelRef: Instance?,
 	Trove: any?,
@@ -96,6 +97,7 @@ local function createSocketState(): SocketState
 	return {
 		Owner = nil,
 		Building = nil,
+		BlockedReason = nil,
 		HP = 0,
 		ModelRef = nil,
 		Trove = nil,
@@ -232,7 +234,9 @@ local function cloneBuildingModel(buildingType: string, definition): Model?
 	end
 
 	if not source:IsA("Model") then
-		warn(("[BuildService] Building path for %s must point to a Model, got %s"):format(buildingType, source.ClassName))
+		warn(
+			("[BuildService] Building path for %s must point to a Model, got %s"):format(buildingType, source.ClassName)
+		)
 		return nil
 	end
 
@@ -240,7 +244,7 @@ local function cloneBuildingModel(buildingType: string, definition): Model?
 end
 
 local function createBuildingId(player: Player, buildingType: string): string
-	return (`{buildingType}_{player.UserId}_{math.floor(os.clock() * 100000)}`)
+	return `{buildingType}_{player.UserId}_{math.floor(os.clock() * 100000)}`
 end
 
 local function createHealthBillboard(model: Model): BillboardGui?
@@ -339,6 +343,7 @@ local function snapshotSockets(sockets: { [string]: SocketState }): { [string]: 
 		snapshot[socketName] = {
 			OwnerUserId = if socketState.Owner ~= nil then socketState.Owner.UserId else nil,
 			Building = socketState.Building,
+			BlockedReason = socketState.BlockedReason,
 			Occupied = socketState.Building ~= nil,
 			HP = socketState.HP,
 		}
@@ -368,7 +373,10 @@ function BuildService.Client:GetHexSnapshot(_player: Player, hexPart: any): any
 	}
 end
 
-function BuildService.Client:RequestBuild(player: Player, request: BuildRequest): { ok: boolean, reason: string?, resources: ResourceState? }
+function BuildService.Client:RequestBuild(
+	player: Player,
+	request: BuildRequest
+): { ok: boolean, reason: string?, resources: ResourceState? }
 	return self.Server:RequestBuild(player, request)
 end
 
@@ -416,7 +424,30 @@ function BuildService:GetHexData(hexPart: BasePart): HexData?
 	return self._boardState[hexPart]
 end
 
-function BuildService:RequestBuild(player: Player, request: BuildRequest): { ok: boolean, reason: string?, resources: ResourceState? }
+function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRef: Instance?): boolean
+	local hexData = self:GetHexData(hexPart)
+	if hexData == nil then
+		return false
+	end
+
+	local socketState = hexData.Sockets.Center
+	if socketState == nil or socketState.Building ~= nil then
+		return false
+	end
+
+	socketState.Owner = nil
+	socketState.Building = reason or "Blocked"
+	socketState.BlockedReason = reason or "Blocked"
+	socketState.HP = 0
+	socketState.ModelRef = modelRef
+
+	return true
+end
+
+function BuildService:RequestBuild(
+	player: Player,
+	request: BuildRequest
+): { ok: boolean, reason: string?, resources: ResourceState? }
 	local now = os.clock()
 	local lastRequest = self._lastRequestAt[player]
 	if lastRequest ~= nil and now - lastRequest < MIN_REQUEST_INTERVAL then

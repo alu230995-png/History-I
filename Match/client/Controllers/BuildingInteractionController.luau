@@ -16,7 +16,8 @@ local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("Bu
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
 local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 
-local BuildingMenu = require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("BuildingMenu"))
+local BuildingMenu =
+	require(script.Parent.Parent:WaitForChild("Menus"):WaitForChild("BuildingMenu"):WaitForChild("index"))
 
 local BuildingInteractionController = Knit.CreateController({
 	Name = "BuildingInteractionController",
@@ -69,6 +70,18 @@ local function findBuildingModel(instance: Instance?, placedFolder: Folder?): Mo
 	end
 
 	return nil
+end
+
+local function guiObjectBlocksWorldInput(guiObject: GuiObject): boolean
+	if guiObject:IsA("GuiButton") or guiObject:IsA("TextBox") then
+		return true
+	end
+
+	if guiObject.Active then
+		return true
+	end
+
+	return guiObject.BackgroundTransparency < 1
 end
 
 function BuildingInteractionController:KnitInit()
@@ -201,7 +214,11 @@ function BuildingInteractionController:_isPointerOverInteractionUi(pointerPositi
 
 	for _, guiObject in playerGui:GetGuiObjectsAtPosition(pointerPosition.X, pointerPosition.Y) do
 		local screenGui = guiObject:FindFirstAncestorOfClass("ScreenGui")
-		if screenGui ~= nil and (screenGui.Name == "BuildingMenuGui" or screenGui.Name == "BuildControlsGui") then
+		if
+			screenGui ~= nil
+			and (screenGui.Name == "BuildingMenuGui" or screenGui.Name == "BuildControlsGui" or screenGui.Name == "NexoSelectionGui")
+			and guiObjectBlocksWorldInput(guiObject)
+		then
 			return true
 		end
 	end

@@ -18,7 +18,8 @@ local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridCo
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
 
-local BuildControls = require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("BuildControls"))
+local BuildControls =
+	require(script.Parent.Parent:WaitForChild("UIs"):WaitForChild("BuildControls"):WaitForChild("index"))
 
 type BuildTarget = {
 	socketName: string,
@@ -120,7 +121,12 @@ local function getBuildingModelSource(buildingType: string, definition): Model?
 	end
 
 	if not source:IsA("Model") then
-		warn(("[BuildController] Building path for %s must point to a Model, got %s"):format(buildingType, source.ClassName))
+		warn(
+			("[BuildController] Building path for %s must point to a Model, got %s"):format(
+				buildingType,
+				source.ClassName
+			)
+		)
 		return nil
 	end
 
@@ -157,6 +163,18 @@ end
 
 local function normalizeRotation(rotation: number): number
 	return (math.round(rotation / 60) * 60) % 360
+end
+
+local function guiObjectBlocksWorldInput(guiObject: GuiObject): boolean
+	if guiObject:IsA("GuiButton") or guiObject:IsA("TextBox") then
+		return true
+	end
+
+	if guiObject.Active then
+		return true
+	end
+
+	return guiObject.BackgroundTransparency < 1
 end
 
 function BuildController:KnitInit()
@@ -473,10 +491,13 @@ function BuildController:_isPointerOverBuildUi(pointerPosition: Vector2): boolea
 		return false
 	end
 
-	local guiObjects = playerGui:GetGuiObjectsAtPosition(pointerPosition.X, pointerPosition.Y)
-	for _, guiObject in guiObjects do
+	for _, guiObject in playerGui:GetGuiObjectsAtPosition(pointerPosition.X, pointerPosition.Y) do
 		local screenGui = guiObject:FindFirstAncestorOfClass("ScreenGui")
-		if screenGui ~= nil and (screenGui.Name == "BuildControlsGui" or screenGui.Name == "BuildingMenuGui") then
+		if
+			screenGui ~= nil
+			and (screenGui.Name == "BuildControlsGui" or screenGui.Name == "BuildingMenuGui" or screenGui.Name == "NexoSelectionGui")
+			and guiObjectBlocksWorldInput(guiObject)
+		then
 			return true
 		end
 	end
@@ -653,7 +674,8 @@ function BuildController:_setTarget(target: BuildTarget?)
 		return
 	end
 
-	if oldTarget == nil
+	if
+		oldTarget == nil
 		or target == nil
 		or oldTarget.hexPart ~= target.hexPart
 		or oldTarget.socketName ~= target.socketName
@@ -698,7 +720,11 @@ function BuildController:_updatePreview()
 	self:_renderBuildUi()
 end
 
-function BuildController:_validateLocalPlacement(buildingType: string, definition, target: BuildTarget): (boolean, string)
+function BuildController:_validateLocalPlacement(
+	buildingType: string,
+	definition,
+	target: BuildTarget
+): (boolean, string)
 	local terrainType = target.hexPart:GetAttribute("TerrainType")
 	if typeof(terrainType) ~= "string" or terrainType == "" then
 		terrainType = GridConfig.DefaultTerrainType
@@ -725,7 +751,9 @@ function BuildController:_validateLocalPlacement(buildingType: string, definitio
 		return false, "MissingHex"
 	end
 
-	local socketSnapshot = if snapshot ~= nil and snapshot.Sockets ~= nil then snapshot.Sockets[target.socketName] else nil
+	local socketSnapshot = if snapshot ~= nil and snapshot.Sockets ~= nil
+		then snapshot.Sockets[target.socketName]
+		else nil
 	if socketSnapshot ~= nil and socketSnapshot.Occupied == true then
 		return false, "SocketOccupied"
 	end

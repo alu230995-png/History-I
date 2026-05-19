@@ -1,1 +1,6 @@
-std = "Roblox"
+std = "roblox"
+
+exclude = [
+	"Packages/**",
+	"sourcemap.json",
+]

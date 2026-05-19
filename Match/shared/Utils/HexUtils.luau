@@ -43,7 +43,7 @@ function HexUtils.createAxial(q: number, r: number): AxialCoord
 end
 
 function HexUtils.toKey(q: number, r: number): string
-	return (`{q},{r}`)
+	return `{q},{r}`
 end
 
 function HexUtils.fromKey(key: string): AxialCoord?
@@ -148,12 +148,7 @@ function HexUtils.getHexSurfaceY(hexPart: BasePart): number
 	return hexPart.Position.Y + (hexPart.Size.Y * 0.5)
 end
 
-function HexUtils.getSocketPositions(
-	q: number,
-	r: number,
-	hexY: number,
-	gridConfig: GridConfigLike
-): SocketPositions
+function HexUtils.getSocketPositions(q: number, r: number, hexY: number, gridConfig: GridConfigLike): SocketPositions
 	local center = HexUtils.axialToWorld(q, r, gridConfig.HexWidth, gridConfig.HexHeight, hexY, gridConfig.GridOrigin)
 	local edgePositions = table.create(6)
 	local innerRadius = gridConfig.HexWidth * 0.5
@@ -176,7 +171,8 @@ function HexUtils.getSocketPositionsFromPart(hexPart: BasePart): SocketPositions
 
 	for index = 1, 6 do
 		local angle = math.rad((index - 1) * 60)
-		local localOffset = Vector3.new(edgeCenterRadius * math.cos(angle), hexPart.Size.Y * 0.5, edgeCenterRadius * math.sin(angle))
+		local localOffset =
+			Vector3.new(edgeCenterRadius * math.cos(angle), hexPart.Size.Y * 0.5, edgeCenterRadius * math.sin(angle))
 		edgePositions[index] = hexPart.CFrame:PointToWorldSpace(localOffset)
 	end
 
@@ -318,7 +314,13 @@ function HexUtils.getNearestSocketForPlacementModeFromPart(
 	return nearestSocket
 end
 
-function HexUtils.getNearestSocket(hitPosition: Vector3, q: number, r: number, hexY: number, gridConfig: GridConfigLike): string
+function HexUtils.getNearestSocket(
+	hitPosition: Vector3,
+	q: number,
+	r: number,
+	hexY: number,
+	gridConfig: GridConfigLike
+): string
 	local socketPositions = HexUtils.getSocketPositions(q, r, hexY, gridConfig)
 	local nearestSocket = "Center"
 	local nearestDistance = (hitPosition - socketPositions.Center).Magnitude

@@ -1,6 +1,7 @@
 local PlayerStates = {
 	Connecting = "Connecting",
 	Lobby = "Lobby",
+	NexoSelection = "NexoSelection",
 	LoadingMatch = "LoadingMatch",
 	Playing = "Playing",
 	Building = "Building",
@@ -14,11 +15,20 @@ PlayerStates.AllowedTransitions = {
 	},
 
 	[PlayerStates.Lobby] = {
+		[PlayerStates.NexoSelection] = true,
 		[PlayerStates.LoadingMatch] = true,
+		[PlayerStates.Playing] = true,
 		[PlayerStates.Building] = true,
 	},
 
+	[PlayerStates.NexoSelection] = {
+		[PlayerStates.Playing] = true,
+		[PlayerStates.Lobby] = true,
+		[PlayerStates.Spectating] = true,
+	},
+
 	[PlayerStates.LoadingMatch] = {
+		[PlayerStates.NexoSelection] = true,
 		[PlayerStates.Playing] = true,
 		[PlayerStates.Lobby] = true,
 	},

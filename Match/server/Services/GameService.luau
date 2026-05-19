@@ -90,8 +90,65 @@ function GameService.Client:GetMatchState(_player: Player): string
 	return self.Server._matchMachine:GetState()
 end
 
-function GameService.Client:SetBuildingMode(player: Player, enabled: any): { ok: boolean, state: string?, reason: string? }
+function GameService.Client:SetBuildingMode(
+	player: Player,
+	enabled: any
+): { ok: boolean, state: string?, reason: string? }
 	return self.Server:_setBuildingMode(player, enabled == true)
+end
+
+function GameService:BeginNexoSelection(context: any?): boolean
+	local matchState = self._matchMachine:GetState()
+	if matchState == MatchStates.NexoSelection then
+		return true
+	end
+
+	if matchState ~= MatchStates.WaitingForPlayers then
+		return false
+	end
+
+	local ok = self._matchMachine:TransitionTo(MatchStates.NexoSelection, context or {})
+	if not ok then
+		return false
+	end
+
+	for _player, machine in self._playerMachines do
+		local currentState = machine:GetState()
+		if
+			currentState == PlayerStates.Lobby
+			or currentState == PlayerStates.LoadingMatch
+			or currentState == PlayerStates.Playing
+		then
+			machine:TransitionTo(PlayerStates.NexoSelection, context or {})
+		end
+	end
+
+	return true
+end
+
+function GameService:FinishNexoSelection(context: any?): boolean
+	local matchState = self._matchMachine:GetState()
+	if matchState ~= MatchStates.NexoSelection then
+		return false
+	end
+
+	local ok = self._matchMachine:TransitionTo(MatchStates.Playing, context or {})
+	if not ok then
+		return false
+	end
+
+	for _player, machine in self._playerMachines do
+		local currentState = machine:GetState()
+		if
+			currentState == PlayerStates.NexoSelection
+			or currentState == PlayerStates.Lobby
+			or currentState == PlayerStates.LoadingMatch
+		then
+			machine:TransitionTo(PlayerStates.Playing, context or {})
+		end
+	end
+
+	return true
 end
 
 function GameService:KnitInit()
@@ -143,7 +200,10 @@ function GameService:GetPlayerState(player: Player): string?
 	return if machine ~= nil then machine:GetState() else nil
 end
 
-function GameService:_setBuildingMode(player: Player, enabled: boolean): { ok: boolean, state: string?, reason: string? }
+function GameService:_setBuildingMode(
+	player: Player,
+	enabled: boolean
+): { ok: boolean, state: string?, reason: string? }
 	local machine = self._playerMachines[player]
 	if machine == nil then
 		return { ok = false, reason = "MissingPlayerState" }
@@ -236,6 +296,16 @@ function GameService:_handlePlayerAdded(player: Player)
 	self:_createControlRigForPlayer(player, playerTrove)
 	self:_createDroneForPlayer(player, playerTrove)
 	machine:TransitionTo(PlayerStates.Lobby)
+
+	if self._matchMachine:GetState() == MatchStates.NexoSelection then
+		machine:TransitionTo(PlayerStates.NexoSelection, {
+			Reason = "JoinedDuringNexoSelection",
+		})
+	elseif self._matchMachine:GetState() == MatchStates.Playing then
+		machine:TransitionTo(PlayerStates.Playing, {
+			Reason = "JoinedDuringMatch",
+		})
+	end
 end
 
 function GameService:_createControlRigForPlayer(player: Player, playerTrove)
@@ -332,11 +402,8 @@ function GameService:_createDroneForPlayer(player: Player, playerTrove)
 
 	if not configuredForceLimits then
 		pcall(function()
-			linearVelocity.MaxForce = math.max(
-				GameConstants.Drone.MaxForce.X,
-				GameConstants.Drone.MaxForce.Y,
-				GameConstants.Drone.MaxForce.Z
-			)
+			linearVelocity.MaxForce =
+				math.max(GameConstants.Drone.MaxForce.X, GameConstants.Drone.MaxForce.Y, GameConstants.Drone.MaxForce.Z)
 		end)
 	end
 

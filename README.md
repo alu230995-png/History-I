@@ -5,6 +5,71 @@
 
 ---
 
+# Estado actual del proyecto
+
+Actualizado: 2026-05-18
+
+Este bloque resume el estado real del codigo actual. El resto del README sigue funcionando como GDD/base de diseno, pero algunas rutas antiguas del documento no coinciden todavia con la estructura actual `Match/...`.
+
+## Ultimos cambios conectados
+
+- Sistema de seleccion de Nexo agregado en servidor con `NexoService`.
+- `NexoService` descubre instancias tageadas con `CollectionService` usando tags que contengan `Nexo`.
+- Cada Nexo detectado se asocia al hexagono debajo y bloquea el socket `Center` con `BuildService:BlockHexCenter`, evitando construir encima.
+- Fase `NexoSelection` agregada a `MatchStates`, `PlayerStates` y `RuntimeTypes`.
+- `GameService` ahora puede iniciar y cerrar la seleccion de Nexo con `BeginNexoSelection` y `FinishNexoSelection`.
+- Jugadores que entran durante `NexoSelection` o `Playing` son sincronizados al estado correcto.
+- Cliente de seleccion de Nexo agregado con `NexoSelectionController`, menu de confirmacion, timer, highlight local y feedback de Nexo seleccionado por otro jugador.
+- Corregido el bloqueo de clicks por overlays transparentes de UI: la seleccion de Nexo, construccion e interaccion de edificios ya ignoran frames transparentes no interactivos.
+- UI de construccion movida a `Match/client/UIs/BuildControls/index.luau`.
+- Menu de edificio movido a `Match/client/Menus/BuildingMenu/index.luau`.
+- `BuildService` expone snapshots de sockets con `BlockedReason` para diferenciar ocupacion normal de bloqueo por Nexo.
+
+## Flujo actual esperado
+
+1. El servidor inicia en `WaitingForPlayers`.
+2. `NexoService` espera un momento, descubre Nexos tageados y llama `GameService:BeginNexoSelection`.
+3. Los jugadores pasan a `NexoSelection`.
+4. El cliente muestra timer y permite hacer click sobre un Nexo disponible.
+5. Click sobre Nexo abre menu; confirmar llama `ClaimNexo`.
+6. Si todos reclaman o se acaba el timer, `NexoService` asigna faltantes automaticamente.
+7. `GameService:FinishNexoSelection` mueve la partida a `Playing`.
+8. Desde `Playing`, el jugador puede entrar a modo construccion y `BuildService` valida colocaciones.
+
+## Requisitos de setup en Studio
+
+- Cada hexagono del tablero debe tener tag `BuildableHex`.
+- Cada Nexo debe tener un tag que contenga `Nexo`, por ejemplo `Nexo` o `NexoNorte`.
+- El Nexo debe estar como `Model` o `BasePart` encima de un hexagono buildable.
+- Opcional en cada Nexo:
+  - Attribute `NexoId`: id estable para snapshots/UI.
+  - Attribute `DisplayName`: nombre visible.
+  - Attribute `Lore`: descripcion mostrada en el menu.
+- Las partes visibles del Nexo deben tener `CanQuery = true` para que el raycast del cliente pueda seleccionarlas.
+
+## TODO prioritario
+
+- [ ] Validar en Roblox Studio con 1 jugador: se detectan Nexos, aparece timer, click abre menu, confirmar asigna y pasa a `Playing`.
+- [ ] Validar en Roblox Studio con 2+ jugadores: dos jugadores no pueden confirmar el mismo Nexo al mismo tiempo; el segundo ve estado `selected` o `taken`.
+- [ ] Conectar la asignacion de Nexo con spawn/base inicial del jugador. Ahora se asigna el Nexo, pero no crea base ni posicion inicial de ejercito.
+- [ ] Definir que ocurre despues de `Playing`: condiciones de victoria/derrota, captura/destruccion del Nexo y fin de partida.
+- [ ] Conectar economia real por Nexo/base. `BuildService` maneja recursos locales de partida, pero no hay produccion por territorio todavia.
+- [ ] Conectar ownership visual y logico del Nexo en el mapa para que otros sistemas puedan consultar `OwnerUserId`.
+- [ ] Agregar acciones reales al menu de edificio. Hoy muestra tipo y HP, pero no tiene reparar, vender, producir unidades ni upgrades.
+- [ ] Agregar dano/combate contra edificios y Nexos. Hay HP en edificios, pero no hay `CombatService` conectado al sistema.
+- [ ] Revisar si `NexoService` debe reiniciar correctamente cuando empieza otra partida en el mismo servidor.
+- [ ] Agregar tests o checklist manual corto para `NexoService`, `BuildService:BlockHexCenter` y transiciones de `GameService`.
+
+## Pendiente tecnico / riesgos
+
+- `README.md` debe mantenerse en UTF-8; si PowerShell muestra caracteres raros, revisar la codificacion de la consola antes de editar.
+- Hay archivos nuevos no trackeados del sistema de Nexo (`NexoService`, `NexoSelectionController`, menus y UIs). Antes de cerrar esta feature, revisar `git status` y confirmar que todos entren al commit.
+- Tooling local integrado con Rokit: `stylua` y `selene` quedan fijados en `rokit.toml`. En una maquina nueva, ejecutar `rokit install`. Validacion recomendada: `stylua --check Match`, `selene Match` y `rojo sourcemap default.project.json --output NUL`.
+- La seleccion depende de raycast contra las instancias de Nexo; si un modelo visual tiene partes `CanQuery = false`, el click no lo detectara.
+- La asignacion automatica al terminar el timer puede reutilizar un Nexo ya tomado si hay mas jugadores que Nexos. Definir si eso es valido para el diseno.
+
+---
+
 ## 📋 ÍNDICE
 1. [Visión General](#visión-general)
 2. [Stack Técnico y Estructura de Proyecto](#stack-técnico)
@@ -283,4 +348,3 @@ local ProfileTemplate = {
 3. Cada transición dispara un `Signal` que otros servicios pueden escuchar. Ejemplo: cuando un jugador pasa a `Defeated`, `CombatService` escucha ese Signal y desactiva sus unidades; `UIController` (cliente) recibe un RemoteEvent y muestra la pantalla de derrota.
 4. **Test de validación:** Imprime en el Output cada transición de estado con `[FSM] PlayerName: OldState → NewState`. Verifica el flujo completo una vez antes de continuar.
 
----

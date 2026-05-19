@@ -1,6 +1,7 @@
 local MatchStates = {
 	Booting = "Booting",
 	WaitingForPlayers = "WaitingForPlayers",
+	NexoSelection = "NexoSelection",
 	LoadingMatch = "LoadingMatch",
 	Playing = "Playing",
 	MatchEnd = "MatchEnd",
@@ -12,7 +13,13 @@ MatchStates.AllowedTransitions = {
 	},
 
 	[MatchStates.WaitingForPlayers] = {
+		[MatchStates.NexoSelection] = true,
 		[MatchStates.LoadingMatch] = true,
+	},
+
+	[MatchStates.NexoSelection] = {
+		[MatchStates.Playing] = true,
+		[MatchStates.WaitingForPlayers] = true,
 	},
 
 	[MatchStates.LoadingMatch] = {

@@ -12,14 +12,17 @@ export type Transition = {
 	StateTrove: any,
 }
 
-export type StateMachine = typeof(setmetatable({} :: {
-	_allowedTransitions: { [string]: { [string]: boolean } }?,
-	_destroyed: boolean,
-	_state: string,
-	_stateTrove: any,
-	_transitionSignal: any,
-	_trove: any,
-}, StateMachine))
+export type StateMachine = typeof(setmetatable(
+	{} :: {
+		_allowedTransitions: { [string]: { [string]: boolean } }?,
+		_destroyed: boolean,
+		_state: string,
+		_stateTrove: any,
+		_transitionSignal: any,
+		_trove: any,
+	},
+	StateMachine
+))
 
 local function canTransition(
 	allowedTransitions: { [string]: { [string]: boolean } }?,
@@ -39,7 +42,10 @@ local function canTransition(
 end
 
 function StateMachine.new(initialState: string, allowedTransitions: { [string]: { [string]: boolean } }?): StateMachine
-	assert(type(initialState) == "string" and initialState ~= "", "StateMachine initialState must be a non-empty string")
+	assert(
+		type(initialState) == "string" and initialState ~= "",
+		"StateMachine initialState must be a non-empty string"
+	)
 
 	local self = setmetatable({}, StateMachine)
 	self._allowedTransitions = allowedTransitions

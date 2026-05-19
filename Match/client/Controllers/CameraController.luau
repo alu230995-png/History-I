@@ -134,13 +134,15 @@ end
 function CameraController:KnitStart()
 	self._gameService = Knit.GetService("GameService")
 
-	self._trove:Add(self._gameService.DroneAssigned:Connect(function(drone: BasePart?, position: Vector3?, _droneName: string?)
-		if typeof(position) == "Vector3" then
-			self._focusPosition = position
-		end
+	self._trove:Add(
+		self._gameService.DroneAssigned:Connect(function(drone: BasePart?, position: Vector3?, _droneName: string?)
+			if typeof(position) == "Vector3" then
+				self._focusPosition = position
+			end
 
-		self:_setDrone(drone)
-	end))
+			self:_setDrone(drone)
+		end)
+	)
 
 	self._trove:Add(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessedEvent: boolean)
 		if gameProcessedEvent then
@@ -421,7 +423,7 @@ function CameraController:_getDesiredVelocity(): Vector3
 	return direction.Unit * GameConstants.Camera.Speed
 end
 
-function CameraController:_smoothVelocity(targetVelocity: Vector3, deltaTime: number): Vector3
+function CameraController:_smoothVelocity(targetVelocity: Vector3, _deltaTime: number): Vector3
 	if targetVelocity.Magnitude <= GameConstants.Camera.MovementDeadzone then
 		return ZERO_VECTOR
 	end
