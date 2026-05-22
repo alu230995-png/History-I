@@ -440,8 +440,12 @@ function BuildService:KnitInit()
 	self._nexoService = nil
 	self._resourceService = nil
 	self.BuildingDestroyed = Signal.new()
+	self.BuildingPlaced = Signal.new()
+	self.BuildingMoved = Signal.new()
 	self.CenterPathingChanged = Signal.new()
 	self._trove:Add(self.BuildingDestroyed)
+	self._trove:Add(self.BuildingPlaced)
+	self._trove:Add(self.BuildingMoved)
 	self._trove:Add(self.CenterPathingChanged)
 
 	self._placedFolder = Instance.new("Folder")
@@ -502,6 +506,19 @@ function BuildService:GetPlacedBuildingRecord(buildingId: any): any?
 		HexData = location.HexData,
 		SocketName = location.SocketName,
 	}
+end
+
+function BuildService:GetPlacedBuildingRecords(): { any }
+	local records = {}
+
+	for buildingId in self._buildingLocations do
+		local record = self:GetPlacedBuildingRecord(buildingId)
+		if record ~= nil then
+			table.insert(records, record)
+		end
+	end
+
+	return records
 end
 
 function BuildService:IsHexCenterBlocked(hexPart: BasePart): boolean
@@ -598,6 +615,7 @@ function BuildService:RequestBuild(
 		SocketState = socketState,
 	}
 	self:_incrementBuildingCount(player, validation.buildingType)
+	self.BuildingPlaced:Fire(self:GetPlacedBuildingRecord(buildingId))
 
 	self.Client.BuildingPlaced:FireAll({
 		BuildingId = buildingId,
@@ -655,6 +673,7 @@ function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: b
 		SocketName = validation.socketName,
 		SocketState = nextSocketState,
 	}
+	self.BuildingMoved:Fire(self:GetPlacedBuildingRecord(validation.buildingId))
 
 	self.Client.BuildingMoved:FireAll({
 		BuildingId = validation.buildingId,

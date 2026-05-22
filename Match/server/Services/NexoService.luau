@@ -7,6 +7,7 @@ local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
 local Knit = require(Packages:WaitForChild("Knit"))
+local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
@@ -155,6 +156,8 @@ function NexoService:KnitInit()
 	self._buildService = nil
 	self._gameService = nil
 	self._resourceService = nil
+	self.CombatTargetChanged = Signal.new()
+	self._trove:Add(self.CombatTargetChanged)
 end
 
 function NexoService:KnitStart()
@@ -188,6 +191,12 @@ function NexoService:KnitStart()
 end
 
 function NexoService:DiscoverNexos()
+	for _, record in self._nexos do
+		if record.IsActive then
+			self.CombatTargetChanged:Fire(record, false)
+		end
+	end
+
 	table.clear(self._nexos)
 	table.clear(self._nexoOrder)
 
@@ -405,6 +414,19 @@ function NexoService:GetAssignedRecord(player: Player): NexoRecord?
 	return if nexoId ~= nil then self._nexos[nexoId] else nil
 end
 
+function NexoService:GetActiveCombatNexos(): { NexoRecord }
+	local records = {}
+
+	for _, nexoId in self._nexoOrder do
+		local record = self._nexos[nexoId] :: NexoRecord
+		if record.IsActive and record.HP > 0 and record.TakenByUserId ~= nil then
+			table.insert(records, record)
+		end
+	end
+
+	return records
+end
+
 function NexoService:HasActiveNexo(player: Player): boolean
 	local record = self:GetAssignedRecord(player)
 	return record ~= nil and record.IsActive and record.HP > 0
@@ -559,6 +581,7 @@ function NexoService:_assignRecordToPlayer(player: Player, record: NexoRecord, a
 		displayName = record.DisplayName,
 		automatic = automatic,
 	})
+	self.CombatTargetChanged:Fire(record, record.IsActive)
 end
 
 function NexoService:_damageRecord(record: NexoRecord, damage: any): { ok: boolean, reason: string?, hp: number? }
@@ -588,6 +611,7 @@ function NexoService:_deactivateRecord(record: NexoRecord)
 
 	record.IsActive = false
 	record.Instance:SetAttribute("NexoActive", false)
+	self.CombatTargetChanged:Fire(record, false)
 
 	local userId = record.TakenByUserId
 	if userId == nil then

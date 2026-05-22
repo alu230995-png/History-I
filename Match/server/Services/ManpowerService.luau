@@ -9,6 +9,7 @@ local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
 local Knit = require(Packages:WaitForChild("Knit"))
+local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
@@ -274,6 +275,10 @@ function ManpowerService:KnitInit()
 	self._buildService = nil
 	self._gameService = nil
 	self._resourceService = nil
+	self.UnitSpawned = Signal.new()
+	self.UnitDestroyed = Signal.new()
+	self._trove:Add(self.UnitSpawned)
+	self._trove:Add(self.UnitDestroyed)
 end
 
 function ManpowerService:KnitStart()
@@ -346,6 +351,40 @@ function ManpowerService:GetUnitsSnapshot(): any
 		TickSeconds = ManpowerConfig.Movement.SimulationTickSeconds,
 		Units = units,
 	}
+end
+
+function ManpowerService:GetCombatUnits(): { UnitRecord }
+	local units = {}
+
+	for _, unit in self._units do
+		table.insert(units, unit)
+	end
+
+	return units
+end
+
+function ManpowerService:IsCombatUnitActive(unit: UnitRecord): boolean
+	return unit ~= nil and self._units[unit.Id] == unit and unit.HP > 0
+end
+
+function ManpowerService:GetUnitCombatPosition(target: any, now: number?): Vector3?
+	local unit = if typeof(target) == "string" then self._units[target] else target
+	if unit == nil or self._units[unit.Id] ~= unit then
+		return nil
+	end
+
+	local segment = unit.Segment
+	if segment ~= nil then
+		local fromHex = self._gridByKey[segment.FromKey]
+		local toHex = self._gridByKey[segment.ToKey]
+		if fromHex ~= nil and toHex ~= nil then
+			local alpha = math.clamp(((now or os.clock()) - segment.StartedAt) / segment.Duration, 0, 1)
+			return fromHex.Center:Lerp(toHex.Center, alpha)
+		end
+	end
+
+	local currentHex = self._gridByKey[unit.CurrentHexKey]
+	return if currentHex ~= nil then currentHex.Center else nil
 end
 
 function ManpowerService:RequestQueueUnit(player: Player, request: any): any
@@ -747,6 +786,7 @@ function ManpowerService:_spawnUnit(
 	self._units[unitId] = unit
 	self:_indexOwnerUnit(unit)
 	self:_occupySlot(spawnHex.Key, unit, spawnSlot)
+	self.UnitSpawned:Fire(unit)
 	self.Client.UnitSpawned:FireAll(self:_snapshotUnit(unit, os.clock()))
 
 	return unit
@@ -1443,6 +1483,7 @@ function ManpowerService:_destroyUnit(unit: UnitRecord, reason: string)
 	self._activeUnits[unit.Id] = nil
 	self:_unindexOwnerUnit(unit)
 	self:_releaseOccupiedSlot(unit.CurrentHexKey, unit)
+	self.UnitDestroyed:Fire(unit)
 	unit.Trove:Destroy()
 	self._resourceService:ReleaseUnitPopulation(unit.Owner, unit.Definition.Population or 0)
 	self.Client.UnitDestroyed:FireAll({

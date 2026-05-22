@@ -112,6 +112,13 @@ ManpowerConfig.Units = table.freeze({
 		}),
 		MovementMode = ManpowerConfig.MovementModes.Humanoid,
 		RootPartName = "HumanoidRootPart",
+		Combat = table.freeze({
+			WeaponId = "InfantryRifle",
+			HitRadius = 2.25,
+			TargetScanIntervalSeconds = 0.25,
+			MuzzleSource = "Tool",
+			MuzzleName = "Muzzle",
+		}),
 	}),
 
 	Tanque = table.freeze({
@@ -135,6 +142,13 @@ ManpowerConfig.Units = table.freeze({
 		}),
 		MovementMode = ManpowerConfig.MovementModes.Humanoid,
 		RootPartName = "HumanoidRootPart",
+		Combat = table.freeze({
+			WeaponId = "TankCannon",
+			HitRadius = 3.25,
+			TargetScanIntervalSeconds = 0.25,
+			MuzzleSource = "RootPart",
+			MuzzleName = "Muzzle",
+		}),
 	}),
 })
 
