@@ -3,10 +3,36 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Packages = ReplicatedStorage:WaitForChild("Packages")
 local React = require(Packages:WaitForChild("React"))
 
-local UITheme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
+
+local function actionButton(label: string, layoutOrder: number, accent: Color3, enabled: boolean, activated)
+	return React.createElement("TextButton", {
+		LayoutOrder = layoutOrder,
+		Size = UDim2.fromOffset(px(112), px(44)),
+		BackgroundColor3 = if enabled then colors.PanelRaised else Color3.fromRGB(38, 40, 40),
+		BorderSizePixel = 0,
+		AutoButtonColor = enabled,
+		Active = enabled,
+		Font = Enum.Font.GothamBold,
+		Text = label,
+		TextColor3 = if enabled then colors.Text else colors.MutedText,
+		TextSize = px(12),
+		TextWrapped = true,
+		[React.Event.Activated] = if enabled then activated else nil,
+	}, {
+		Corner = React.createElement("UICorner", {
+			CornerRadius = UDim.new(0, px(3)),
+		}),
+		Stroke = React.createElement("UIStroke", {
+			Color = accent,
+			Thickness = px(1),
+			Transparency = if enabled then 0.12 else 0.5,
+		}),
+	})
+end
 
 local function BuildingMenu(props)
 	if not props.visible then
@@ -14,6 +40,7 @@ local function BuildingMenu(props)
 	end
 
 	local buildingType = props.buildingType or "BUILDING"
+	local canEdit = props.canEdit == true
 	local hp = if typeof(props.hp) == "number" then props.hp else 0
 	local maxHp = if typeof(props.maxHp) == "number" and props.maxHp > 0 then props.maxHp else 1
 	local healthText = `{math.floor(hp)} / {math.floor(maxHp)}`
@@ -65,26 +92,21 @@ local function BuildingMenu(props)
 			TextColor3 = colors.MutedText,
 			TextSize = px(13),
 		}),
-		Close = React.createElement("TextButton", {
+		Actions = React.createElement("Frame", {
 			LayoutOrder = 3,
-			Size = UDim2.fromOffset(px(128), px(44)),
-			BackgroundColor3 = colors.PanelRaised,
-			BorderSizePixel = 0,
-			AutoButtonColor = true,
-			Font = Enum.Font.GothamBold,
-			Text = "CERRAR",
-			TextColor3 = colors.Text,
-			TextSize = px(13),
-			[React.Event.Activated] = props.onClose,
+			AutomaticSize = Enum.AutomaticSize.XY,
+			BackgroundTransparency = 1,
 		}, {
-			Corner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(0, px(3)),
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, px(8)),
 			}),
-			Stroke = React.createElement("UIStroke", {
-				Color = colors.Red,
-				Thickness = px(1),
-				Transparency = 0.15,
-			}),
+			Move = actionButton("MOVER", 1, colors.Amber, canEdit, props.onMove),
+			Destroy = actionButton("DESTRUIR", 2, colors.Red, canEdit, props.onDestroy),
+			Close = actionButton("CERRAR", 3, colors.Stroke, true, props.onClose),
 		}),
 	})
 end

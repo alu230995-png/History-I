@@ -19,7 +19,7 @@ local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("Play
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
 
 local BuildControls =
-	require(script.Parent.Parent:WaitForChild("UIs"):WaitForChild("BuildControls"):WaitForChild("index"))
+	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("BuildControls"):WaitForChild("index"))
 
 type BuildTarget = {
 	socketName: string,
@@ -142,7 +142,10 @@ local function getPlacementRotation(hexPart: BasePart, socketName: string, rotat
 	local placementMode = definition.PlacementMode or BuildingConfig.PlacementModes.Center
 
 	if placementMode == BuildingConfig.PlacementModes.Edge then
-		return (HexUtils.getEdgeYawDegreesFromPart(hexPart, socketName) + (definition.ModelYawOffset or 0)) % 360
+		local placementRotation = (
+			HexUtils.getEdgeYawDegreesFromPart(hexPart, socketName) + (definition.ModelYawOffset or 0)
+		) % 360
+		return placementRotation
 	end
 
 	if definition.RotationLocked == true then
@@ -154,10 +157,11 @@ end
 
 local function getPlacementCFrame(target: BuildTarget, rotation: number, definition): CFrame
 	local offset = definition.PivotOffset or Vector3.zero
+	local pivotTopOffsetY = GridConfig.BuildingPivotTopOffsetY or 0
 	local verticalOffset = BuildingConfig.Shadow.VerticalOffset or 0
 	local placementRotation = getPlacementRotation(target.hexPart, target.socketName, rotation, definition)
 
-	return CFrame.new(target.socketPosition + Vector3.new(0, offset.Y + verticalOffset, 0))
+	return CFrame.new(target.socketPosition + Vector3.new(0, pivotTopOffsetY + offset.Y + verticalOffset, 0))
 		* CFrame.Angles(0, math.rad(placementRotation), 0)
 end
 
@@ -186,6 +190,8 @@ function BuildController:KnitInit()
 	self._gameService = nil
 	self._isBuildingMode = false
 	self._selectedBuildingType = nil
+	self._movingBuilding = nil
+	self._movingBuildingId = nil
 	self._rotation = 0
 	self._target = nil
 	self._lastTouchPosition = nil
@@ -231,6 +237,16 @@ function BuildController:KnitStart()
 		end
 	end))
 
+	self._trove:Add(self._buildService.BuildingMoved:Connect(function(payload)
+		if self._target ~= nil and payload ~= nil and payload.hexPart == self._target.hexPart then
+			self._hexSnapshotTarget = nil
+		end
+	end))
+
+	self._trove:Add(self._buildService.BuildingDestroyed:Connect(function()
+		self._hexSnapshotTarget = nil
+	end))
+
 	self._trove:Add(self._gameService.PlayerStateChanged:Connect(function(_oldState: string, newState: string)
 		self:_setBuildingModeActive(newState == PlayerStates.Building)
 	end))
@@ -258,6 +274,8 @@ function BuildController:SetSelectedBuildingType(buildingType: string?)
 	end
 
 	self._selectedBuildingType = normalized
+	self._movingBuilding = nil
+	self._movingBuildingId = nil
 	self._rotation = 0
 	self._target = nil
 	self._manualEdgeSocketName = nil
@@ -287,8 +305,64 @@ function BuildController:SetSelectedBuildingType(buildingType: string?)
 	self:_renderBuildUi()
 end
 
+function BuildController:StartMovingBuilding(building: Model?): { ok: boolean, reason: string? }
+	if typeof(building) ~= "Instance" or not building:IsA("Model") then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	local buildingId = building:GetAttribute("BuildingId")
+	local normalized = BuildingConfig.NormalizeBuildingType(building:GetAttribute("BuildingType"))
+	if typeof(buildingId) ~= "string" or normalized == nil then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	local definition = BuildingConfig.Buildings[normalized]
+	if definition == nil or getBuildingModelSource(normalized, definition) == nil then
+		return { ok = false, reason = "MissingBuildingModel" }
+	end
+
+	self._selectedBuildingType = normalized
+	self._movingBuilding = building
+	self._movingBuildingId = buildingId
+	self._rotation = 0
+	self._target = nil
+	self._manualEdgeSocketName = nil
+	self._manualEdgeTarget = nil
+	self._shadowBuildingType = nil
+	self._previewValid = false
+	self._previewReason = "NoTarget"
+
+	local result = if self._gameService ~= nil then self._gameService:SetBuildingMode(true) else nil
+	if result ~= nil and result.ok ~= true then
+		warn(("[BuildController] Could not enter moving mode: %s"):format(tostring(result.reason)))
+		self._selectedBuildingType = nil
+		self._movingBuilding = nil
+		self._movingBuildingId = nil
+		self:_destroyShadow()
+		self:_renderBuildUi()
+		return {
+			ok = false,
+			reason = result.reason,
+		}
+	end
+
+	if result ~= nil and result.state == PlayerStates.Building then
+		self:_setBuildingModeActive(true)
+	end
+
+	if self._isBuildingMode then
+		self:_updateTarget()
+		self:_updatePreview()
+	end
+
+	self:_renderBuildUi()
+	return { ok = true }
+end
+
 function BuildController:CancelPlacement()
 	self._selectedBuildingType = nil
+	self._movingBuilding = nil
+	self._movingBuildingId = nil
 	self._target = nil
 	self._manualEdgeSocketName = nil
 	self._manualEdgeTarget = nil
@@ -347,12 +421,22 @@ function BuildController:RequestBuildAtCurrentTarget(): { ok: boolean, reason: s
 	end
 
 	local target = self._target :: BuildTarget
-	local result = self._buildService:RequestBuild({
-		hexPart = target.hexPart,
-		socketName = target.socketName,
-		buildingType = self._selectedBuildingType,
-		rotation = self._rotation,
-	})
+	local result = nil
+	if self._movingBuildingId ~= nil then
+		result = self._buildService:RequestMove({
+			buildingId = self._movingBuildingId,
+			hexPart = target.hexPart,
+			socketName = target.socketName,
+			rotation = self._rotation,
+		})
+	else
+		result = self._buildService:RequestBuild({
+			hexPart = target.hexPart,
+			socketName = target.socketName,
+			buildingType = self._selectedBuildingType,
+			rotation = self._rotation,
+		})
+	end
 
 	if result ~= nil and result.resources ~= nil then
 		self._resources = result.resources
@@ -360,7 +444,7 @@ function BuildController:RequestBuildAtCurrentTarget(): { ok: boolean, reason: s
 
 	if result ~= nil and result.ok then
 		self._hexSnapshotTarget = nil
-		self:_updatePreview()
+		self:CancelPlacement()
 	else
 		self._previewReason = if result ~= nil and result.reason ~= nil then result.reason else "Rejected"
 		self._previewValid = false
@@ -405,6 +489,8 @@ function BuildController:_setBuildingModeActive(isActive: boolean)
 
 	if not isActive then
 		self._selectedBuildingType = nil
+		self._movingBuilding = nil
+		self._movingBuildingId = nil
 		self._lastTouchPosition = nil
 		self._lastMapPointerPosition = nil
 		self._target = nil
@@ -518,9 +604,13 @@ function BuildController:_renderBuildUi(force: boolean?)
 	local canRotate = visible and BuildingConfig.CanRotate(self._selectedBuildingType)
 	local socketName = if target ~= nil then target.socketName else self._previewReason
 	local buildingName = if definition ~= nil then definition.DisplayName else nil
+	if buildingName ~= nil and self._movingBuildingId ~= nil then
+		buildingName = `MOVER {buildingName}`
+	end
 	local signature = table.concat({
 		tostring(visible),
 		tostring(self._selectedBuildingType),
+		tostring(self._movingBuildingId),
 		tostring(self._previewValid),
 		tostring(self._previewReason),
 		tostring(canRotate),
@@ -738,12 +828,14 @@ function BuildController:_validateLocalPlacement(
 		return false, "SocketNotAllowed"
 	end
 
-	if self._resources.Gold < definition.Gold then
-		return false, "NotEnoughGold"
-	end
+	if self._movingBuildingId == nil then
+		if self._resources.Gold < definition.Gold then
+			return false, "NotEnoughGold"
+		end
 
-	if self._resources.PopulationUsed + definition.Population > self._resources.PopulationCap then
-		return false, "NotEnoughPopulation"
+		if self._resources.PopulationUsed + definition.Population > self._resources.PopulationCap then
+			return false, "NotEnoughPopulation"
+		end
 	end
 
 	local snapshot = self:_getHexSnapshot(target)
@@ -850,10 +942,17 @@ function BuildController:_shadowCollides(placementHex: BasePart): boolean
 
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	overlapParams.FilterDescendantsInstances = { self._shadowModel, placementHex }
+	overlapParams.FilterDescendantsInstances = if self._movingBuilding ~= nil
+		then { self._shadowModel, placementHex, self._movingBuilding }
+		else { self._shadowModel, placementHex }
 
+	local placedFolder = Workspace:FindFirstChild(BuildingConfig.PlacedFolderName)
 	for _, part in Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams) do
 		if part:IsDescendantOf(self._shadowModel) or part == placementHex then
+			continue
+		end
+
+		if placedFolder ~= nil and part:IsDescendantOf(placedFolder) then
 			continue
 		end
 

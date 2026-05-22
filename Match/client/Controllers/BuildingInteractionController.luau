@@ -17,7 +17,7 @@ local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("Play
 local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 
 local BuildingMenu =
-	require(script.Parent.Parent:WaitForChild("Menus"):WaitForChild("BuildingMenu"):WaitForChild("index"))
+	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("BuildingMenu"):WaitForChild("index"))
 
 local BuildingInteractionController = Knit.CreateController({
 	Name = "BuildingInteractionController",
@@ -89,6 +89,8 @@ function BuildingInteractionController:KnitInit()
 	self._trove = Trove.new()
 	self._camera = Workspace.CurrentCamera
 	self._placedFolder = nil
+	self._buildService = nil
+	self._buildController = nil
 	self._gameService = nil
 	self._isBuildingMode = false
 	self._root = nil
@@ -117,6 +119,8 @@ function BuildingInteractionController:KnitInit()
 end
 
 function BuildingInteractionController:KnitStart()
+	self._buildService = Knit.GetService("BuildService")
+	self._buildController = Knit.GetController("BuildController")
 	self._gameService = Knit.GetService("GameService")
 	self._placedFolder = Workspace:WaitForChild(BuildingConfig.PlacedFolderName, 10)
 	self:_mountUi()
@@ -294,16 +298,9 @@ function BuildingInteractionController:_activateAtPointer(pointerPosition: Vecto
 	end
 
 	self._selectedBuilding = building
-
-	if building:GetAttribute("Interactable") == true then
-		self._machine:TransitionTo(InteractionStates.MenuOpen, {
-			Building = building,
-		})
-	else
-		self._machine:TransitionTo(InteractionStates.Selected, {
-			Building = building,
-		})
-	end
+	self._machine:TransitionTo(InteractionStates.MenuOpen, {
+		Building = building,
+	})
 
 	self:_applyHighlight()
 	self:_renderMenu()
@@ -331,9 +328,18 @@ function BuildingInteractionController:_refreshState()
 	end
 
 	self:_applyHighlight()
+	self:_renderMenu()
 end
 
 function BuildingInteractionController:_getHighlightedBuilding(): Model?
+	if self._selectedBuilding ~= nil then
+		return self._selectedBuilding
+	end
+
+	return self._hoveredBuilding
+end
+
+function BuildingInteractionController:_getActiveBuilding(): Model?
 	if self._selectedBuilding ~= nil then
 		return self._selectedBuilding
 	end
@@ -347,27 +353,73 @@ function BuildingInteractionController:_applyHighlight()
 	self._highlight.Enabled = highlightedBuilding ~= nil
 end
 
+function BuildingInteractionController:_destroyActiveBuilding()
+	local building = self:_getActiveBuilding()
+	if building == nil or self._buildService == nil then
+		return
+	end
+
+	local buildingId = building:GetAttribute("BuildingId")
+	if typeof(buildingId) ~= "string" then
+		return
+	end
+
+	local result = self._buildService:RequestDestroy({
+		buildingId = buildingId,
+	})
+
+	if result ~= nil and result.ok == true then
+		self._hoveredBuilding = nil
+		self:_clearSelection()
+	end
+end
+
+function BuildingInteractionController:_moveActiveBuilding()
+	local building = self:_getActiveBuilding()
+	if building == nil or self._buildController == nil then
+		return
+	end
+
+	local result = self._buildController:StartMovingBuilding(building)
+	if result == nil or result.ok == true then
+		self._hoveredBuilding = nil
+		self:_clearSelection()
+	end
+end
+
 function BuildingInteractionController:_renderMenu()
 	if self._root == nil then
 		return
 	end
 
 	local state = self._machine:GetState()
-	local selectedBuilding = self._selectedBuilding
-	local visible = state == InteractionStates.MenuOpen and selectedBuilding ~= nil
-	local buildingType = if selectedBuilding ~= nil then selectedBuilding:GetAttribute("BuildingType") else nil
-	local hp = if selectedBuilding ~= nil then selectedBuilding:GetAttribute("HP") else nil
-	local maxHp = if selectedBuilding ~= nil then selectedBuilding:GetAttribute("MaxHP") else nil
+	local activeBuilding = self:_getActiveBuilding()
+	local visible = activeBuilding ~= nil
+		and (
+			state == InteractionStates.MenuOpen
+			or state == InteractionStates.Selected
+			or state == InteractionStates.Hovering
+		)
+	local buildingType = if activeBuilding ~= nil then activeBuilding:GetAttribute("BuildingType") else nil
+	local hp = if activeBuilding ~= nil then activeBuilding:GetAttribute("HP") else nil
+	local maxHp = if activeBuilding ~= nil then activeBuilding:GetAttribute("MaxHP") else nil
+	local ownerUserId = if activeBuilding ~= nil then activeBuilding:GetAttribute("OwnerUserId") else nil
+	local canEdit = ownerUserId == LOCAL_PLAYER.UserId
 
 	self._root:render(React.createElement(BuildingMenu, {
 		visible = visible,
 		buildingType = buildingType,
 		hp = hp,
 		maxHp = maxHp,
+		canEdit = canEdit,
+		onMove = function()
+			self:_moveActiveBuilding()
+		end,
+		onDestroy = function()
+			self:_destroyActiveBuilding()
+		end,
 		onClose = function()
-			self._machine:TransitionTo(InteractionStates.Selected, {
-				Building = self._selectedBuilding,
-			})
+			self:_clearSelection()
 			self:_renderMenu()
 		end,
 	}))

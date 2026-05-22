@@ -13,6 +13,13 @@ BuildingConfig.PlacementModes = table.freeze({
 	Edge = "Edge",
 })
 BuildingConfig.HealthBillboardName = "BuildingHealthBillboard"
+BuildingConfig.MenuOrder = table.freeze({
+	"Casa",
+	"Aserradero",
+	"Cuartel",
+	"Artilleria",
+	"Pared",
+})
 
 BuildingConfig.Shadow = table.freeze({
 	ValidColor = Color3.fromRGB(63, 176, 92),

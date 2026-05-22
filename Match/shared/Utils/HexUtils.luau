@@ -33,6 +33,13 @@ export type SocketPositions = {
 	Edge: { Vector3 },
 }
 
+export type EdgeFrame = {
+	Center: Vector3,
+	Tangent: Vector3,
+	Outward: Vector3,
+	YawDegrees: number,
+}
+
 export type PlacementMode = "Center" | "Edge"
 
 function HexUtils.createAxial(q: number, r: number): AxialCoord
@@ -144,8 +151,12 @@ function HexUtils.getHexCoordFromPart(hexPart: BasePart, gridConfig: GridConfigL
 	return HexUtils.worldToAxial(hexPart.Position, gridConfig.HexWidth, gridConfig.HexHeight, gridConfig.GridOrigin)
 end
 
+function HexUtils.getHexTopCenterFromPart(hexPart: BasePart): Vector3
+	return hexPart.CFrame:PointToWorldSpace(Vector3.new(0, hexPart.Size.Y * 0.5, 0))
+end
+
 function HexUtils.getHexSurfaceY(hexPart: BasePart): number
-	return hexPart.Position.Y + (hexPart.Size.Y * 0.5)
+	return HexUtils.getHexTopCenterFromPart(hexPart).Y
 end
 
 function HexUtils.getSocketPositions(q: number, r: number, hexY: number, gridConfig: GridConfigLike): SocketPositions
@@ -164,16 +175,73 @@ function HexUtils.getSocketPositions(q: number, r: number, hexY: number, gridCon
 	}
 end
 
+local function getPointyHexLocalVertices(hexPart: BasePart): { Vector3 }
+	local halfWidth = hexPart.Size.X * 0.5
+	local halfHeight = hexPart.Size.Z * 0.5
+	local topY = hexPart.Size.Y * 0.5
+
+	return {
+		Vector3.new(halfWidth, topY, -halfHeight * 0.5),
+		Vector3.new(halfWidth, topY, halfHeight * 0.5),
+		Vector3.new(0, topY, halfHeight),
+		Vector3.new(-halfWidth, topY, halfHeight * 0.5),
+		Vector3.new(-halfWidth, topY, -halfHeight * 0.5),
+		Vector3.new(0, topY, -halfHeight),
+	}
+end
+
+local function getEdgeEndpointsFromPart(hexPart: BasePart, edgeIndex: number): (Vector3, Vector3)
+	local vertices = getPointyHexLocalVertices(hexPart)
+	local firstIndex = ((edgeIndex - 1) % 6) + 1
+	local secondIndex = (firstIndex % 6) + 1
+
+	return hexPart.CFrame:PointToWorldSpace(vertices[firstIndex]),
+		hexPart.CFrame:PointToWorldSpace(vertices[secondIndex])
+end
+
+local function getYawDegreesForLocalXAxis(direction: Vector3): number
+	if direction.Magnitude <= 0 then
+		return 0
+	end
+
+	local unit = direction.Unit
+	return math.deg(math.atan2(-unit.Z, unit.X)) % 360
+end
+
+function HexUtils.getEdgeFrameFromPart(hexPart: BasePart, socketName: string): EdgeFrame
+	local edgeIndex = HexUtils.getEdgeIndex(socketName) or 1
+	local center = HexUtils.getHexTopCenterFromPart(hexPart)
+	local vertexA, vertexB = getEdgeEndpointsFromPart(hexPart, edgeIndex)
+	local edgeCenter = (vertexA + vertexB) * 0.5
+	local tangent = vertexA - vertexB
+	local outward = edgeCenter - center
+
+	if tangent.Magnitude <= 0 then
+		tangent = Vector3.xAxis
+	else
+		tangent = tangent.Unit
+	end
+
+	if outward.Magnitude <= 0 then
+		outward = Vector3.zAxis
+	else
+		outward = outward.Unit
+	end
+
+	return {
+		Center = edgeCenter,
+		Tangent = tangent,
+		Outward = outward,
+		YawDegrees = getYawDegreesForLocalXAxis(tangent),
+	}
+end
+
 function HexUtils.getSocketPositionsFromPart(hexPart: BasePart): SocketPositions
-	local center = hexPart.CFrame:PointToWorldSpace(Vector3.new(0, hexPart.Size.Y * 0.5, 0))
+	local center = HexUtils.getHexTopCenterFromPart(hexPart)
 	local edgePositions = table.create(6)
-	local edgeCenterRadius = hexPart.Size.X * 0.5
 
 	for index = 1, 6 do
-		local angle = math.rad((index - 1) * 60)
-		local localOffset =
-			Vector3.new(edgeCenterRadius * math.cos(angle), hexPart.Size.Y * 0.5, edgeCenterRadius * math.sin(angle))
-		edgePositions[index] = hexPart.CFrame:PointToWorldSpace(localOffset)
+		edgePositions[index] = HexUtils.getEdgeFrameFromPart(hexPart, HexUtils.getEdgeSocketName(index)).Center
 	end
 
 	return {
@@ -245,12 +313,7 @@ function HexUtils.getEdgeYawDegrees(socketName: string): number
 end
 
 function HexUtils.getEdgeYawDegreesFromPart(hexPart: BasePart, socketName: string): number
-	local edgeIndex = HexUtils.getEdgeIndex(socketName) or 1
-	local angle = math.rad((edgeIndex - 1) * 60)
-	local normal = hexPart.CFrame:VectorToWorldSpace(Vector3.new(math.cos(angle), 0, math.sin(angle)))
-	local outwardAngle = math.deg(math.atan2(normal.Z, normal.X))
-
-	return (outwardAngle + 90) % 360
+	return HexUtils.getEdgeFrameFromPart(hexPart, socketName).YawDegrees
 end
 
 function HexUtils.getNearestEdgeSocket(

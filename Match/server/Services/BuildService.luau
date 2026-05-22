@@ -46,11 +46,24 @@ type BuildRequest = {
 	rotation: any?,
 }
 
+type MoveRequest = {
+	buildingId: any,
+	hexPart: any,
+	socketName: any,
+	rotation: any?,
+}
+
+type DestroyRequest = {
+	buildingId: any,
+}
+
 local BuildService = Knit.CreateService({
 	Name = "BuildService",
 
 	Client = {
 		BuildingPlaced = Knit.CreateSignal(),
+		BuildingMoved = Knit.CreateSignal(),
+		BuildingDestroyed = Knit.CreateSignal(),
 		ResourcesChanged = Knit.CreateSignal(),
 	},
 })
@@ -157,7 +170,8 @@ local function getPlacementRotation(hexData: HexData, socketName: string, reques
 	local placementMode = definition.PlacementMode or BuildingConfig.PlacementModes.Center
 
 	if placementMode == BuildingConfig.PlacementModes.Edge then
-		return ((hexData.EdgeYawDegrees[socketName] or 0) + (definition.ModelYawOffset or 0)) % 360
+		local rotation = ((hexData.EdgeYawDegrees[socketName] or 0) + (definition.ModelYawOffset or 0)) % 360
+		return rotation
 	end
 
 	return normalizeRotation(requestRotation, definition)
@@ -173,8 +187,10 @@ end
 
 local function getPlacementCFrame(socketPosition: Vector3, rotation: number, definition): CFrame
 	local offset = definition.PivotOffset or Vector3.zero
+	local pivotTopOffsetY = GridConfig.BuildingPivotTopOffsetY or 0
 
-	return CFrame.new(socketPosition + Vector3.new(0, offset.Y, 0)) * CFrame.Angles(0, math.rad(rotation), 0)
+	return CFrame.new(socketPosition + Vector3.new(0, pivotTopOffsetY + offset.Y, 0))
+		* CFrame.Angles(0, math.rad(rotation), 0)
 end
 
 local function splitPath(path: string): { string }
@@ -352,6 +368,19 @@ local function snapshotSockets(sockets: { [string]: SocketState }): { [string]: 
 	return snapshot
 end
 
+local function clearSocketState(socketState: SocketState, destroyTrove: boolean)
+	if destroyTrove and socketState.Trove ~= nil then
+		socketState.Trove:Destroy()
+	end
+
+	socketState.Owner = nil
+	socketState.Building = nil
+	socketState.BlockedReason = nil
+	socketState.HP = 0
+	socketState.ModelRef = nil
+	socketState.Trove = nil
+end
+
 function BuildService.Client:GetResources(player: Player): ResourceState
 	return cloneResourceState(self.Server:_getResources(player))
 end
@@ -380,10 +409,19 @@ function BuildService.Client:RequestBuild(
 	return self.Server:RequestBuild(player, request)
 end
 
+function BuildService.Client:RequestMove(player: Player, request: MoveRequest): { ok: boolean, reason: string? }
+	return self.Server:RequestMove(player, request)
+end
+
+function BuildService.Client:RequestDestroy(player: Player, request: DestroyRequest): { ok: boolean, reason: string? }
+	return self.Server:RequestDestroy(player, request)
+end
+
 function BuildService:KnitInit()
 	self._destroyed = false
 	self._trove = Trove.new()
 	self._boardState = {}
+	self._buildingLocations = {}
 	self._resources = {}
 	self._lastRequestAt = {}
 	self._gameService = nil
@@ -493,9 +531,17 @@ function BuildService:RequestBuild(
 	local socketState = validation.socketState
 	socketState.Owner = player
 	socketState.Building = validation.buildingType
+	socketState.BlockedReason = nil
 	socketState.HP = definition.HP
 	socketState.ModelRef = model
 	socketState.Trove = buildingTrove
+	model:SetAttribute("HexSocketName", validation.socketName)
+	model:SetAttribute("PlacementRotation", validation.rotation)
+	self._buildingLocations[buildingId] = {
+		HexData = validation.hexData,
+		SocketName = validation.socketName,
+		SocketState = socketState,
+	}
 
 	self.Client.ResourcesChanged:Fire(player, cloneResourceState(resources))
 	self.Client.BuildingPlaced:FireAll({
@@ -508,6 +554,98 @@ function BuildService:RequestBuild(
 	})
 
 	return { ok = true, resources = cloneResourceState(resources) }
+end
+
+function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: boolean, reason: string? }
+	local now = os.clock()
+	local lastRequest = self._lastRequestAt[player]
+	if lastRequest ~= nil and now - lastRequest < MIN_REQUEST_INTERVAL then
+		return { ok = false, reason = "RateLimited" }
+	end
+	self._lastRequestAt[player] = now
+
+	local validation = self:_validateMoveRequest(player, request)
+	if not validation.ok then
+		return {
+			ok = false,
+			reason = validation.reason,
+		}
+	end
+
+	local model = validation.model
+	local currentSocketState = validation.currentSocketState
+	local nextSocketState = validation.socketState
+	local buildingTrove = currentSocketState.Trove
+
+	if currentSocketState ~= nextSocketState then
+		clearSocketState(currentSocketState, false)
+	end
+
+	model:PivotTo(validation.placementCFrame)
+	model:SetAttribute("HexSocketName", validation.socketName)
+	model:SetAttribute("PlacementRotation", validation.rotation)
+
+	nextSocketState.Owner = player
+	nextSocketState.Building = validation.buildingType
+	nextSocketState.BlockedReason = nil
+	nextSocketState.HP = validation.hp
+	nextSocketState.ModelRef = model
+	nextSocketState.Trove = buildingTrove
+
+	self._buildingLocations[validation.buildingId] = {
+		HexData = validation.hexData,
+		SocketName = validation.socketName,
+		SocketState = nextSocketState,
+	}
+
+	self.Client.BuildingMoved:FireAll({
+		BuildingId = validation.buildingId,
+		OwnerUserId = player.UserId,
+		BuildingType = validation.buildingType,
+		hexPart = validation.hexPart,
+		socketName = validation.socketName,
+		rotation = validation.rotation,
+	})
+
+	return { ok = true }
+end
+
+function BuildService:RequestDestroy(player: Player, request: DestroyRequest): { ok: boolean, reason: string? }
+	if type(request) ~= "table" or typeof(request.buildingId) ~= "string" then
+		return { ok = false, reason = "InvalidRequest" }
+	end
+
+	local location = self._buildingLocations[request.buildingId]
+	if location == nil or location.SocketState == nil then
+		return { ok = false, reason = "MissingBuilding" }
+	end
+
+	local socketState = location.SocketState :: SocketState
+	if socketState.Owner ~= player then
+		return { ok = false, reason = "NotOwner" }
+	end
+
+	local buildingType = socketState.Building
+	local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
+	if buildingType == nil or definition == nil then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	self._buildingLocations[request.buildingId] = nil
+	clearSocketState(socketState, true)
+
+	local resources = self:_getResources(player)
+	resources.PopulationUsed = math.max(0, resources.PopulationUsed - (definition.Population or 0))
+	resources.PopulationCap = math.max(0, resources.PopulationCap - (definition.PopulationCapBonus or 0))
+
+	self.Client.ResourcesChanged:Fire(player, cloneResourceState(resources))
+	self.Client.BuildingDestroyed:FireAll({
+		BuildingId = request.buildingId,
+		OwnerUserId = player.UserId,
+		BuildingType = buildingType,
+	})
+
+	return { ok = true }
 end
 
 function BuildService:_validateBuildRequest(player: Player, request: BuildRequest): any
@@ -601,6 +739,7 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 
 	return {
 		ok = true,
+		hexData = hexData,
 		hexPart = hexData.HexPart,
 		socketName = socketName,
 		buildingType = buildingType,
@@ -612,7 +751,117 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 	}
 end
 
-function BuildService:_modelCollides(model: Model, placementHex: BasePart): boolean
+function BuildService:_validateMoveRequest(player: Player, request: MoveRequest): any
+	if type(request) ~= "table" then
+		return { ok = false, reason = "InvalidRequest" }
+	end
+
+	if self._gameService ~= nil and self._gameService:GetPlayerState(player) ~= PlayerStates.Building then
+		return { ok = false, reason = "NotBuilding" }
+	end
+
+	if typeof(request.buildingId) ~= "string" then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	local currentLocation = self._buildingLocations[request.buildingId]
+	if currentLocation == nil or currentLocation.SocketState == nil then
+		return { ok = false, reason = "MissingBuilding" }
+	end
+
+	local currentSocketState = currentLocation.SocketState :: SocketState
+	if currentSocketState.Owner ~= player then
+		return { ok = false, reason = "NotOwner" }
+	end
+
+	local model = currentSocketState.ModelRef
+	if typeof(model) ~= "Instance" or not model:IsA("Model") or model.Parent == nil then
+		return { ok = false, reason = "MissingBuildingModel" }
+	end
+
+	local buildingType = currentSocketState.Building
+	local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
+	if buildingType == nil or definition == nil then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	local hexPart = request.hexPart
+	local socketName = request.socketName
+	if typeof(hexPart) ~= "Instance" or not hexPart:IsA("BasePart") then
+		return { ok = false, reason = "InvalidHex" }
+	end
+
+	if not isValidSocketName(socketName) then
+		return { ok = false, reason = "InvalidSocket" }
+	end
+
+	local placementMode = definition.PlacementMode or BuildingConfig.PlacementModes.Center
+	if not BuildingConfig.IsSocketValidForPlacementMode(placementMode, socketName) then
+		return { ok = false, reason = "InvalidPlacementSocket" }
+	end
+
+	if not BuildingConfig.IsSocketAllowed(buildingType, socketName) then
+		return { ok = false, reason = "SocketNotAllowed" }
+	end
+
+	local hexData = self:GetHexData(hexPart)
+	if hexData == nil then
+		return { ok = false, reason = "MissingHex" }
+	end
+
+	if hexData.HexPart.Parent == nil then
+		return { ok = false, reason = "StaleHex" }
+	end
+
+	if not GridConfig.BuildableTerrains[hexData.TerrainType] then
+		return { ok = false, reason = "BlockedTerrain" }
+	end
+
+	local socketState = hexData.Sockets[socketName]
+	if socketState == nil then
+		return { ok = false, reason = "InvalidSocket" }
+	end
+
+	if socketState.Building ~= nil and socketState ~= currentSocketState then
+		return { ok = false, reason = "SocketOccupied" }
+	end
+
+	local socketPosition = getSocketPosition(hexData, socketName)
+	if socketPosition == nil then
+		return { ok = false, reason = "InvalidSocket" }
+	end
+
+	local rotation = getPlacementRotation(hexData, socketName, request.rotation, definition)
+	local placementCFrame = getPlacementCFrame(socketPosition, rotation, definition)
+	local testModel = cloneBuildingModel(buildingType, definition)
+	if testModel == nil then
+		return { ok = false, reason = "MissingBuildingModel" }
+	end
+
+	testModel:PivotTo(placementCFrame)
+	if self:_modelCollides(testModel, hexData.HexPart, model) then
+		testModel:Destroy()
+		return { ok = false, reason = "BlockedByCollision" }
+	end
+	testModel:Destroy()
+
+	return {
+		ok = true,
+		buildingId = request.buildingId,
+		buildingType = buildingType,
+		model = model,
+		hp = currentSocketState.HP,
+		currentSocketState = currentSocketState,
+		hexData = hexData,
+		hexPart = hexData.HexPart,
+		socketName = socketName,
+		socketState = socketState,
+		rotation = rotation,
+		placementCFrame = placementCFrame,
+	}
+end
+
+function BuildService:_modelCollides(model: Model, placementHex: BasePart, ignoredInstance: Instance?): boolean
 	local boxCFrame, boxSize = model:GetBoundingBox()
 	if boxSize.Magnitude <= 0 then
 		return false
@@ -620,10 +869,16 @@ function BuildService:_modelCollides(model: Model, placementHex: BasePart): bool
 
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	overlapParams.FilterDescendantsInstances = { model, placementHex }
+	overlapParams.FilterDescendantsInstances = if ignoredInstance ~= nil
+		then { model, placementHex, ignoredInstance }
+		else { model, placementHex }
 
 	for _, part in Workspace:GetPartBoundsInBox(boxCFrame, boxSize, overlapParams) do
 		if part:IsDescendantOf(model) or part == placementHex then
+			continue
+		end
+
+		if self._placedFolder ~= nil and part:IsDescendantOf(self._placedFolder) then
 			continue
 		end
 
@@ -700,6 +955,7 @@ function BuildService:Destroy()
 	self._destroyed = true
 	self._trove:Destroy()
 	table.clear(self._boardState)
+	table.clear(self._buildingLocations)
 	table.clear(self._resources)
 	table.clear(self._lastRequestAt)
 end

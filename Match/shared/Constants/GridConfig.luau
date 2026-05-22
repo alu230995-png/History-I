@@ -3,11 +3,14 @@ local GridConfig = {
 	HexHeight = 10,
 	GridOrigin = Vector3.zero,
 	HexSnapTolerance = 1.25,
+	BuildingPivotTopOffsetY = 0,
 
 	TerrainTypes = {
 		Plain = "Plain",
 		Water = "Water",
 		Forest = "Forest",
+		Desert = "Desert",
+		Mountain = "Mountain",
 	},
 
 	DefaultTerrainType = "Plain",
@@ -15,7 +18,9 @@ local GridConfig = {
 	BuildableTerrains = {
 		Plain = true,
 		Water = false,
-		Forest = false,
+		Forest = true,
+		Desert = true,
+		Mountain = true,
 	},
 
 	BuildableHexTag = "BuildableHex",

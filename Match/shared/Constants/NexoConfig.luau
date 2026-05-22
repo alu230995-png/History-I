@@ -13,6 +13,11 @@ NexoConfig.States = table.freeze({
 })
 
 NexoConfig.BlockReason = "Nexo"
+NexoConfig.AssignedHighlight = table.freeze({
+	FillTransparency = 1,
+	HoverFillTransparency = 0.8,
+	OutlineTransparency = 0.02,
+})
 
 function NexoConfig.GetDefaultLore(displayName: string): string
 	return `{displayName} mantiene una posicion clave para controlar el frente y sostener la linea de avance.`

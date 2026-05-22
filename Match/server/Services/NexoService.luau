@@ -329,7 +329,6 @@ function NexoService:ClaimNexo(player: Player, nexoId: any): { ok: boolean, reas
 
 	self:_assignRecordToPlayer(player, record, false)
 	self:_broadcastSnapshot()
-	self:_finishIfEveryoneAssigned()
 
 	return { ok = true }
 end
@@ -441,7 +440,6 @@ function NexoService:_startTimer(token: number)
 
 			self._remainingSeconds -= 1
 			self.Client.NexoTimerChanged:FireAll(self._remainingSeconds)
-			self:_finishIfEveryoneAssigned()
 		end
 
 		if self._phaseActive and self._phaseToken == token then
@@ -519,27 +517,6 @@ function NexoService:_assignFallbacks()
 	self:_broadcastSnapshot()
 end
 
-function NexoService:_allPlayersAssigned(): boolean
-	local players = Players:GetPlayers()
-	if #players <= 0 then
-		return false
-	end
-
-	for _, player in players do
-		if self._assignedByPlayer[player] == nil then
-			return false
-		end
-	end
-
-	return true
-end
-
-function NexoService:_finishIfEveryoneAssigned()
-	if self._phaseActive and self:_allPlayersAssigned() then
-		self:_finishSelection()
-	end
-end
-
 function NexoService:_finishSelection()
 	if not self._phaseActive then
 		return
@@ -563,7 +540,6 @@ function NexoService:_handlePlayerRemoving(player: Player)
 	self._assignedByPlayer[player] = nil
 	self._previewByPlayer[player] = nil
 	self:_broadcastSnapshot()
-	self:_finishIfEveryoneAssigned()
 end
 
 function NexoService:Destroy()

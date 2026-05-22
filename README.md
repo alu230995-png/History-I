@@ -21,8 +21,8 @@ Este bloque resume el estado real del codigo actual. El resto del README sigue f
 - Jugadores que entran durante `NexoSelection` o `Playing` son sincronizados al estado correcto.
 - Cliente de seleccion de Nexo agregado con `NexoSelectionController`, menu de confirmacion, timer, highlight local y feedback de Nexo seleccionado por otro jugador.
 - Corregido el bloqueo de clicks por overlays transparentes de UI: la seleccion de Nexo, construccion e interaccion de edificios ya ignoran frames transparentes no interactivos.
-- UI de construccion movida a `Match/client/UIs/BuildControls/index.luau`.
-- Menu de edificio movido a `Match/client/Menus/BuildingMenu/index.luau`.
+- UI de construccion movida a `Match/client/Components/BuildControls/index.luau`.
+- Menu de edificio movido a `Match/client/Components/BuildingMenu/index.luau`.
 - `BuildService` expone snapshots de sockets con `BlockedReason` para diferenciar ocupacion normal de bloqueo por Nexo.
 
 ## Flujo actual esperado
