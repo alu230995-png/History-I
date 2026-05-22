@@ -1,4 +1,8 @@
 local GameConstants = {
+	Match = {
+		MinimumPlayersToStart = 1,
+	},
+
 	Camera = {
 		Speed = 80,
 		Height = 30,

@@ -27,6 +27,7 @@ local function NexoTimerUI(props)
 		BackgroundColor3 = colors.Panel,
 		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
+		Active = false,
 	}, {
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UDim.new(0, px(4)),

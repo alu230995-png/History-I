@@ -107,6 +107,10 @@ function GameService:BeginNexoSelection(context: any?): boolean
 		return false
 	end
 
+	if #Players:GetPlayers() < GameConstants.Match.MinimumPlayersToStart then
+		return false
+	end
+
 	local ok = self._matchMachine:TransitionTo(MatchStates.NexoSelection, context or {})
 	if not ok then
 		return false
@@ -198,6 +202,33 @@ function GameService:GetPlayerState(player: Player): string?
 	local machine = self._playerMachines[player]
 
 	return if machine ~= nil then machine:GetState() else nil
+end
+
+function GameService:GetMatchState(): string
+	return self._matchMachine:GetState()
+end
+
+function GameService:OnMatchStateChanged(callback)
+	return self._matchMachine:OnTransition(callback)
+end
+
+function GameService:DefeatPlayer(player: Player, context: any?): boolean
+	local machine = self._playerMachines[player]
+	if machine == nil then
+		return false
+	end
+
+	local currentState = machine:GetState()
+	if currentState == PlayerStates.Defeated or currentState == PlayerStates.Spectating then
+		return true
+	end
+
+	if currentState ~= PlayerStates.Playing and currentState ~= PlayerStates.Building then
+		return false
+	end
+
+	self._preBuildingStates[player] = nil
+	return machine:TransitionTo(PlayerStates.Defeated, context or {})
 end
 
 function GameService:_setBuildingMode(

@@ -1,10 +1,8 @@
 local BuildingConfig = {}
 
-BuildingConfig.StartingResources = table.freeze({
-	Gold = 500,
-	PopulationUsed = 0,
-	PopulationCap = 10,
-})
+local MatchEconomyConfig = require(script.Parent:WaitForChild("MatchEconomyConfig"))
+
+BuildingConfig.StartingResources = MatchEconomyConfig.StartingResources
 
 BuildingConfig.PlacedFolderName = "PlacedBuildings"
 BuildingConfig.PreviewFolderName = "BuildPreviews"
@@ -34,6 +32,7 @@ BuildingConfig.Buildings = table.freeze({
 		DisplayName = "CASA",
 		PlacementMode = "Center",
 		Gold = 50,
+		Limit = 4,
 		Population = 0,
 		PopulationCapBonus = 4,
 		HP = 150,
@@ -52,6 +51,7 @@ BuildingConfig.Buildings = table.freeze({
 		DisplayName = "ASERRADERO",
 		PlacementMode = "Center",
 		Gold = 75,
+		Limit = 2,
 		Population = 2,
 		PopulationCapBonus = 0,
 		HP = 100,
@@ -70,6 +70,7 @@ BuildingConfig.Buildings = table.freeze({
 		DisplayName = "CUARTEL",
 		PlacementMode = "Center",
 		Gold = 120,
+		Limit = 2,
 		Population = 3,
 		PopulationCapBonus = 0,
 		HP = 200,
@@ -88,6 +89,7 @@ BuildingConfig.Buildings = table.freeze({
 		DisplayName = "ARTILLERIA",
 		PlacementMode = "Edge",
 		Gold = 200,
+		Limit = 4,
 		Population = 5,
 		PopulationCapBonus = 0,
 		HP = 80,
@@ -112,6 +114,7 @@ BuildingConfig.Buildings = table.freeze({
 		DisplayName = "PARED",
 		PlacementMode = "Edge",
 		Gold = 25,
+		Limit = 12,
 		Population = 0,
 		PopulationCapBonus = 0,
 		HP = 180,

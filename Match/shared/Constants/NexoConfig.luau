@@ -5,6 +5,9 @@ NexoConfig.SelectionDurationSeconds = 10
 NexoConfig.AssignmentMessageSeconds = 3
 NexoConfig.HexRaycastHeight = 160
 NexoConfig.HexRaycastDepth = 420
+NexoConfig.RootPartName = "RootPart"
+NexoConfig.HexStateAttribute = "State"
+NexoConfig.HP = 1000
 
 NexoConfig.States = table.freeze({
 	Available = "available",

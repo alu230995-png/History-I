@@ -16,6 +16,7 @@ local NexoConfig = require(Shared:WaitForChild("Constants"):WaitForChild("NexoCo
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
 local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 local UITheme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local WorldInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("WorldInput"))
 
 local NexoBuildMenu =
 	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("NexoBuildMenu"):WaitForChild("index"))
@@ -92,18 +93,6 @@ local function instanceContains(root: Instance?, child: Instance?): boolean
 	end
 
 	return child == root or child:IsDescendantOf(root)
-end
-
-local function guiObjectBlocksWorldInput(guiObject: GuiObject): boolean
-	if guiObject:IsA("GuiButton") or guiObject:IsA("TextBox") then
-		return true
-	end
-
-	if guiObject.Active then
-		return true
-	end
-
-	return guiObject.BackgroundTransparency < 1
 end
 
 local function getStableColorForNexo(nexoId: string?): Color3
@@ -306,7 +295,7 @@ function NexoSelectionController:_render()
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 	}, {
-		Timer = React.createElement(NexoTimerUI, {
+		NexoTimerPanel = React.createElement(NexoTimerUI, {
 			visible = self._snapshot.phaseActive == true,
 			segundosRestantes = self._remainingSeconds,
 			assignmentMessage = self._assignmentMessage,
@@ -574,18 +563,7 @@ function NexoSelectionController:_isPointerOverNexoUi(pointerPosition: Vector2):
 		return false
 	end
 
-	for _, guiObject in playerGui:GetGuiObjectsAtPosition(pointerPosition.X, pointerPosition.Y) do
-		local screenGui = guiObject:FindFirstAncestorOfClass("ScreenGui")
-		if
-			screenGui ~= nil
-			and (screenGui.Name == "NexoSelectionGui" or screenGui.Name == "BuildingMenuGui" or screenGui.Name == "BuildControlsGui")
-			and guiObjectBlocksWorldInput(guiObject)
-		then
-			return true
-		end
-	end
-
-	return false
+	return WorldInput.IsPointerBlocked(playerGui, pointerPosition)
 end
 
 function NexoSelectionController:_isPointerOverNexoBuildPanel(pointerPosition: Vector2): boolean

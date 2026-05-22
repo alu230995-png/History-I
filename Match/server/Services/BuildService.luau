@@ -8,6 +8,7 @@ local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
 local Knit = require(Packages:WaitForChild("Knit"))
+local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("BuildingConfig"))
@@ -32,6 +33,7 @@ type SocketState = {
 
 type HexData = {
 	TerrainType: string,
+	State: string?,
 	HexPart: BasePart,
 	Center: Vector3,
 	EdgePositions: { [string]: Vector3 },
@@ -152,6 +154,11 @@ local function getTerrainType(hexPart: BasePart): string
 	end
 
 	return terrainType
+end
+
+local function getHexState(hexPart: BasePart): string?
+	local state = hexPart:GetAttribute("State")
+	return if typeof(state) == "string" and state ~= "" then state else nil
 end
 
 local function normalizeRotation(rotation: any, definition): number
@@ -385,7 +392,7 @@ function BuildService.Client:GetResources(player: Player): ResourceState
 	return cloneResourceState(self.Server:_getResources(player))
 end
 
-function BuildService.Client:GetHexSnapshot(_player: Player, hexPart: any): any
+function BuildService.Client:GetHexSnapshot(player: Player, hexPart: any): any
 	if typeof(hexPart) ~= "Instance" or not hexPart:IsA("BasePart") then
 		return nil
 	end
@@ -395,9 +402,14 @@ function BuildService.Client:GetHexSnapshot(_player: Player, hexPart: any): any
 		return nil
 	end
 
+	local territoryAllowed, territoryReason = self.Server:_validateTerritory(player, hexData)
+
 	return {
 		hexPart = hexData.HexPart,
 		TerrainType = hexData.TerrainType,
+		State = hexData.State,
+		TerritoryAllowed = territoryAllowed,
+		TerritoryReason = territoryReason,
 		Sockets = snapshotSockets(hexData.Sockets),
 	}
 end
@@ -422,9 +434,15 @@ function BuildService:KnitInit()
 	self._trove = Trove.new()
 	self._boardState = {}
 	self._buildingLocations = {}
-	self._resources = {}
+	self._buildingCounts = {}
 	self._lastRequestAt = {}
 	self._gameService = nil
+	self._nexoService = nil
+	self._resourceService = nil
+	self.BuildingDestroyed = Signal.new()
+	self.CenterPathingChanged = Signal.new()
+	self._trove:Add(self.BuildingDestroyed)
+	self._trove:Add(self.CenterPathingChanged)
 
 	self._placedFolder = Instance.new("Folder")
 	self._placedFolder.Name = BuildingConfig.PlacedFolderName
@@ -434,20 +452,17 @@ end
 
 function BuildService:KnitStart()
 	self._gameService = Knit.GetService("GameService")
+	self._nexoService = Knit.GetService("NexoService")
+	self._resourceService = Knit.GetService("MatchResourceService")
 	self:RebuildBoardState()
 
-	self._trove:Add(Players.PlayerAdded:Connect(function(player: Player)
-		self:_initializePlayer(player)
-	end))
-
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
-		self._resources[player] = nil
+		self._buildingCounts[player] = nil
 		self._lastRequestAt[player] = nil
 	end))
-
-	for _, player in Players:GetPlayers() do
-		self:_initializePlayer(player)
-	end
+	self._trove:Add(self._resourceService.ResourcesChanged:Connect(function(player: Player, resources: ResourceState)
+		self.Client.ResourcesChanged:Fire(player, resources)
+	end))
 end
 
 function BuildService:RebuildBoardState()
@@ -460,6 +475,43 @@ end
 
 function BuildService:GetHexData(hexPart: BasePart): HexData?
 	return self._boardState[hexPart]
+end
+
+function BuildService:GetPlacedBuildingRecord(buildingId: any): any?
+	if typeof(buildingId) ~= "string" then
+		return nil
+	end
+
+	local location = self._buildingLocations[buildingId]
+	if location == nil or location.SocketState == nil then
+		return nil
+	end
+
+	local socketState = location.SocketState :: SocketState
+	local model = socketState.ModelRef
+	if socketState.Owner == nil or socketState.Building == nil or model == nil then
+		return nil
+	end
+
+	return {
+		BuildingId = buildingId,
+		BuildingType = socketState.Building,
+		Owner = socketState.Owner,
+		Model = model,
+		HexPart = location.HexData.HexPart,
+		HexData = location.HexData,
+		SocketName = location.SocketName,
+	}
+end
+
+function BuildService:IsHexCenterBlocked(hexPart: BasePart): boolean
+	local hexData = self:GetHexData(hexPart)
+	if hexData == nil then
+		return false
+	end
+
+	local centerState = hexData.Sockets.Center
+	return centerState ~= nil and centerState.Building ~= nil
 end
 
 function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRef: Instance?): boolean
@@ -478,6 +530,7 @@ function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRe
 	socketState.BlockedReason = reason or "Blocked"
 	socketState.HP = 0
 	socketState.ModelRef = modelRef
+	self.CenterPathingChanged:Fire(hexPart)
 
 	return true
 end
@@ -503,12 +556,14 @@ function BuildService:RequestBuild(
 	end
 
 	local definition = validation.definition
-	local resources = self:_getResources(player)
 	local buildingId = createBuildingId(player, validation.buildingType)
 
-	resources.Gold -= definition.Gold
-	resources.PopulationUsed += definition.Population
-	resources.PopulationCap += definition.PopulationCapBonus or 0
+	self._resourceService:ApplyBuildingPlaced(
+		player,
+		definition.Gold or 0,
+		definition.Population or 0,
+		definition.PopulationCapBonus or 0
+	)
 
 	local model = validation.model
 	preparePlacedModel(model, player, validation.buildingType, definition, buildingId)
@@ -542,8 +597,8 @@ function BuildService:RequestBuild(
 		SocketName = validation.socketName,
 		SocketState = socketState,
 	}
+	self:_incrementBuildingCount(player, validation.buildingType)
 
-	self.Client.ResourcesChanged:Fire(player, cloneResourceState(resources))
 	self.Client.BuildingPlaced:FireAll({
 		BuildingId = buildingId,
 		OwnerUserId = player.UserId,
@@ -552,8 +607,11 @@ function BuildService:RequestBuild(
 		socketName = validation.socketName,
 		rotation = validation.rotation,
 	})
+	if validation.socketName == "Center" then
+		self.CenterPathingChanged:Fire(validation.hexPart)
+	end
 
-	return { ok = true, resources = cloneResourceState(resources) }
+	return { ok = true, resources = self:_getResources(player) }
 end
 
 function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: boolean, reason: string? }
@@ -606,6 +664,12 @@ function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: b
 		socketName = validation.socketName,
 		rotation = validation.rotation,
 	})
+	if validation.currentSocketName == "Center" then
+		self.CenterPathingChanged:Fire(validation.currentHexPart)
+	end
+	if validation.socketName == "Center" then
+		self.CenterPathingChanged:Fire(validation.hexPart)
+	end
 
 	return { ok = true }
 end
@@ -631,21 +695,44 @@ function BuildService:RequestDestroy(player: Player, request: DestroyRequest): {
 		return { ok = false, reason = "InvalidBuilding" }
 	end
 
-	self._buildingLocations[request.buildingId] = nil
-	clearSocketState(socketState, true)
-
-	local resources = self:_getResources(player)
-	resources.PopulationUsed = math.max(0, resources.PopulationUsed - (definition.Population or 0))
-	resources.PopulationCap = math.max(0, resources.PopulationCap - (definition.PopulationCapBonus or 0))
-
-	self.Client.ResourcesChanged:Fire(player, cloneResourceState(resources))
-	self.Client.BuildingDestroyed:FireAll({
-		BuildingId = request.buildingId,
-		OwnerUserId = player.UserId,
-		BuildingType = buildingType,
-	})
+	self:_destroyBuilding(request.buildingId, location)
 
 	return { ok = true }
+end
+
+function BuildService:DamageBuilding(target: any, damage: any): { ok: boolean, reason: string?, hp: number? }
+	if not isFiniteNumber(damage) or damage <= 0 then
+		return { ok = false, reason = "InvalidDamage" }
+	end
+
+	local buildingId = nil
+	if typeof(target) == "string" then
+		buildingId = target
+	elseif typeof(target) == "Instance" then
+		buildingId = target:GetAttribute("BuildingId")
+	end
+
+	if typeof(buildingId) ~= "string" then
+		return { ok = false, reason = "InvalidBuilding" }
+	end
+
+	local location = self._buildingLocations[buildingId]
+	if location == nil or location.SocketState == nil then
+		return { ok = false, reason = "MissingBuilding" }
+	end
+
+	local socketState = location.SocketState :: SocketState
+	socketState.HP = math.max(0, socketState.HP - damage)
+	local model = socketState.ModelRef
+	if model ~= nil then
+		model:SetAttribute("HP", socketState.HP)
+	end
+
+	if socketState.HP <= 0 then
+		self:_destroyBuilding(buildingId, location)
+	end
+
+	return { ok = true, hp = socketState.HP }
 end
 
 function BuildService:_validateBuildRequest(player: Player, request: BuildRequest): any
@@ -700,6 +787,11 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 		return { ok = false, reason = "BlockedTerrain" }
 	end
 
+	local territoryOk, territoryReason = self:_validateTerritory(player, hexData)
+	if not territoryOk then
+		return { ok = false, reason = territoryReason }
+	end
+
 	local socketState = hexData.Sockets[socketName]
 	if socketState == nil then
 		return { ok = false, reason = "InvalidSocket" }
@@ -709,13 +801,14 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 		return { ok = false, reason = "SocketOccupied" }
 	end
 
-	local resources = self:_getResources(player)
-	if resources.Gold < definition.Gold then
-		return { ok = false, reason = "NotEnoughGold" }
+	if typeof(definition.Limit) == "number" and self:_getBuildingCount(player, buildingType) >= definition.Limit then
+		return { ok = false, reason = "BuildingLimitReached" }
 	end
 
-	if resources.PopulationUsed + definition.Population > resources.PopulationCap then
-		return { ok = false, reason = "NotEnoughPopulation" }
+	local canAfford, resourceReason =
+		self._resourceService:CanAffordBuilding(player, definition.Gold or 0, definition.Population or 0)
+	if not canAfford then
+		return { ok = false, reason = resourceReason }
 	end
 
 	local socketPosition = getSocketPosition(hexData, socketName)
@@ -817,6 +910,11 @@ function BuildService:_validateMoveRequest(player: Player, request: MoveRequest)
 		return { ok = false, reason = "BlockedTerrain" }
 	end
 
+	local territoryOk, territoryReason = self:_validateTerritory(player, hexData)
+	if not territoryOk then
+		return { ok = false, reason = territoryReason }
+	end
+
 	local socketState = hexData.Sockets[socketName]
 	if socketState == nil then
 		return { ok = false, reason = "InvalidSocket" }
@@ -852,6 +950,8 @@ function BuildService:_validateMoveRequest(player: Player, request: MoveRequest)
 		model = model,
 		hp = currentSocketState.HP,
 		currentSocketState = currentSocketState,
+		currentSocketName = currentLocation.SocketName,
+		currentHexPart = currentLocation.HexData.HexPart,
 		hexData = hexData,
 		hexPart = hexData.HexPart,
 		socketName = socketName,
@@ -896,21 +996,88 @@ function BuildService:_modelCollides(model: Model, placementHex: BasePart, ignor
 	return false
 end
 
-function BuildService:_initializePlayer(player: Player)
-	if self._resources[player] ~= nil then
+function BuildService:_getResources(player: Player): ResourceState
+	if self._resourceService == nil then
+		return createResourceState()
+	end
+
+	return self._resourceService:GetSnapshot(player)
+end
+
+function BuildService:_getBuildingCount(player: Player, buildingType: string): number
+	local counts = self._buildingCounts[player]
+	return if counts ~= nil then counts[buildingType] or 0 else 0
+end
+
+function BuildService:_incrementBuildingCount(player: Player, buildingType: string)
+	local counts = self._buildingCounts[player]
+	if counts == nil then
+		counts = {}
+		self._buildingCounts[player] = counts
+	end
+
+	counts[buildingType] = (counts[buildingType] or 0) + 1
+end
+
+function BuildService:_decrementBuildingCount(player: Player, buildingType: string)
+	local counts = self._buildingCounts[player]
+	if counts == nil then
 		return
 	end
 
-	self._resources[player] = createResourceState()
-	self.Client.ResourcesChanged:Fire(player, cloneResourceState(self._resources[player]))
+	counts[buildingType] = math.max(0, (counts[buildingType] or 0) - 1)
 end
 
-function BuildService:_getResources(player: Player): ResourceState
-	if self._resources[player] == nil then
-		self:_initializePlayer(player)
+function BuildService:_validateTerritory(player: Player, hexData: HexData): (boolean, string?)
+	if self._nexoService == nil then
+		return false, "NoActiveNexo"
 	end
 
-	return self._resources[player]
+	local nexoState, nexoReason = self._nexoService:GetActiveTerritoryState(player)
+	if nexoState == nil then
+		return false, nexoReason or "NoActiveNexo"
+	end
+
+	if hexData.State == nil then
+		return false, "MissingHexState"
+	end
+
+	if hexData.State ~= nexoState then
+		return false, "OutOfNexoState"
+	end
+
+	return true, nil
+end
+
+function BuildService:_destroyBuilding(buildingId: string, location)
+	local socketState = location.SocketState :: SocketState
+	local player = socketState.Owner
+	local buildingType = socketState.Building
+	local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
+	if player == nil or buildingType == nil or definition == nil then
+		self._buildingLocations[buildingId] = nil
+		clearSocketState(socketState, true)
+		return
+	end
+
+	self._buildingLocations[buildingId] = nil
+	clearSocketState(socketState, true)
+	self:_decrementBuildingCount(player, buildingType)
+	self._resourceService:ApplyBuildingRemoved(player, definition.Population or 0, definition.PopulationCapBonus or 0)
+	self.Client.BuildingDestroyed:FireAll({
+		BuildingId = buildingId,
+		OwnerUserId = player.UserId,
+		BuildingType = buildingType,
+	})
+	self.BuildingDestroyed:Fire({
+		BuildingId = buildingId,
+		Owner = player,
+		OwnerUserId = player.UserId,
+		BuildingType = buildingType,
+	})
+	if location.SocketName == "Center" then
+		self.CenterPathingChanged:Fire(location.HexData.HexPart)
+	end
 end
 
 function BuildService:_scanTaggedHex(taggedInstance: Instance)
@@ -939,6 +1106,7 @@ function BuildService:_scanTaggedHex(taggedInstance: Instance)
 
 	self._boardState[hexPart] = {
 		TerrainType = getTerrainType(hexPart),
+		State = getHexState(hexPart),
 		HexPart = hexPart,
 		Center = socketPositions.Center,
 		EdgePositions = edgePositions,
@@ -956,7 +1124,7 @@ function BuildService:Destroy()
 	self._trove:Destroy()
 	table.clear(self._boardState)
 	table.clear(self._buildingLocations)
-	table.clear(self._resources)
+	table.clear(self._buildingCounts)
 	table.clear(self._lastRequestAt)
 end
 

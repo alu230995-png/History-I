@@ -27,10 +27,15 @@ type NexoRecord = {
 	Id: string,
 	Tag: string,
 	Instance: Instance,
+	RootPart: BasePart,
 	HexPart: BasePart,
+	TerritoryState: string?,
 	DisplayName: string,
 	Lore: string,
 	State: string,
+	IsActive: boolean,
+	HP: number,
+	MaxHP: number,
 	SelectedByUserId: number?,
 	TakenByUserId: number?,
 }
@@ -60,6 +65,32 @@ local function getInstancePosition(instance: Instance): Vector3?
 
 	local part = instance:FindFirstChildWhichIsA("BasePart", true)
 	return if part ~= nil then part.Position else nil
+end
+
+local function getNexoRootPart(instance: Instance): BasePart?
+	if instance:IsA("BasePart") then
+		return instance
+	end
+
+	if not instance:IsA("Model") then
+		return instance:FindFirstChildWhichIsA("BasePart", true)
+	end
+
+	local namedRoot = instance:FindFirstChild(NexoConfig.RootPartName, true)
+	if namedRoot ~= nil and namedRoot:IsA("BasePart") then
+		return namedRoot
+	end
+
+	return instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getHexState(hexPart: BasePart): string?
+	local state = hexPart:GetAttribute(NexoConfig.HexStateAttribute)
+	return if typeof(state) == "string" and state ~= "" then state else nil
+end
+
+local function isPositiveFiniteNumber(value: any): boolean
+	return typeof(value) == "number" and value > 0 and value == value and math.abs(value) < math.huge
 end
 
 local function formatDisplayName(tag: string, instance: Instance): string
@@ -119,17 +150,30 @@ function NexoService:KnitInit()
 	self._remainingSeconds = NexoConfig.SelectionDurationSeconds
 	self._phaseActive = false
 	self._phaseToken = 0
+	self._selectionStarted = false
 	self._random = Random.new()
 	self._buildService = nil
 	self._gameService = nil
+	self._resourceService = nil
 end
 
 function NexoService:KnitStart()
 	self._buildService = Knit.GetService("BuildService")
 	self._gameService = Knit.GetService("GameService")
+	self._resourceService = Knit.GetService("MatchResourceService")
 
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
 		self:_handlePlayerRemoving(player)
+	end))
+
+	self._trove:Add(Players.PlayerAdded:Connect(function()
+		task.defer(function()
+			if self._destroyed or self._selectionStarted or #self._nexoOrder <= 0 then
+				return
+			end
+
+			self:StartNexoSelection()
+		end)
 	end))
 
 	task.defer(function()
@@ -167,7 +211,13 @@ function NexoService:DiscoverNexos()
 
 	for _, tag in nexoTags do
 		for _, instance in CollectionService:GetTagged(tag) do
-			local hexPart = self:_resolveHexPartBelow(instance, taggedHexes)
+			local rootPart = getNexoRootPart(instance)
+			if rootPart == nil then
+				warn(("[NexoService] Nexo %s has no root BasePart"):format(instance:GetFullName()))
+				continue
+			end
+
+			local hexPart = self:_resolveHexPartBelow(rootPart, taggedHexes)
 			if hexPart == nil then
 				warn(("[NexoService] Could not resolve hex below %s"):format(instance:GetFullName()))
 				continue
@@ -198,13 +248,21 @@ function NexoService:DiscoverNexos()
 				Id = nexoId,
 				Tag = tag,
 				Instance = instance,
+				RootPart = rootPart,
 				HexPart = hexPart,
+				TerritoryState = getHexState(hexPart),
 				DisplayName = displayName,
 				Lore = getLore(displayName, instance),
 				State = NexoConfig.States.Available,
+				IsActive = false,
+				HP = NexoConfig.HP,
+				MaxHP = NexoConfig.HP,
 				SelectedByUserId = nil,
 				TakenByUserId = nil,
 			}
+			instance:SetAttribute("HP", NexoConfig.HP)
+			instance:SetAttribute("MaxHP", NexoConfig.HP)
+			instance:SetAttribute("NexoActive", false)
 		end
 	end
 
@@ -215,7 +273,7 @@ function NexoService:DiscoverNexos()
 end
 
 function NexoService:StartNexoSelection(): boolean
-	if self._phaseActive then
+	if self._selectionStarted then
 		return true
 	end
 
@@ -236,6 +294,7 @@ function NexoService:StartNexoSelection(): boolean
 
 	self._phaseActive = true
 	self._phaseToken += 1
+	self._selectionStarted = true
 	self._remainingSeconds = NexoConfig.SelectionDurationSeconds
 	table.clear(self._assignedByPlayer)
 	table.clear(self._previewByPlayer)
@@ -267,6 +326,10 @@ function NexoService:PreviewNexo(player: Player, nexoId: any): { ok: boolean, re
 
 	if record.State == NexoConfig.States.Taken then
 		return { ok = false, reason = "Taken" }
+	end
+
+	if record.HP <= 0 then
+		return { ok = false, reason = "Destroyed" }
 	end
 
 	if record.State == NexoConfig.States.Selected and record.SelectedByUserId ~= player.UserId then
@@ -323,6 +386,10 @@ function NexoService:ClaimNexo(player: Player, nexoId: any): { ok: boolean, reas
 		return { ok = false, reason = "Taken" }
 	end
 
+	if record.HP <= 0 then
+		return { ok = false, reason = "Destroyed" }
+	end
+
 	if record.State == NexoConfig.States.Selected and record.SelectedByUserId ~= player.UserId then
 		return { ok = false, reason = "SelectedByOther" }
 	end
@@ -331,6 +398,59 @@ function NexoService:ClaimNexo(player: Player, nexoId: any): { ok: boolean, reas
 	self:_broadcastSnapshot()
 
 	return { ok = true }
+end
+
+function NexoService:GetAssignedRecord(player: Player): NexoRecord?
+	local nexoId = self._assignedByPlayer[player]
+	return if nexoId ~= nil then self._nexos[nexoId] else nil
+end
+
+function NexoService:HasActiveNexo(player: Player): boolean
+	local record = self:GetAssignedRecord(player)
+	return record ~= nil and record.IsActive and record.HP > 0
+end
+
+function NexoService:GetActiveTerritoryState(player: Player): (string?, string?)
+	local record = self:GetAssignedRecord(player)
+	if record == nil or not record.IsActive or record.HP <= 0 then
+		return nil, "NoActiveNexo"
+	end
+
+	if record.TerritoryState == nil then
+		return nil, "MissingNexoState"
+	end
+
+	return record.TerritoryState, nil
+end
+
+function NexoService:DamageAssignedNexo(player: Player, damage: any): { ok: boolean, reason: string?, hp: number? }
+	local record = self:GetAssignedRecord(player)
+	if record == nil then
+		return { ok = false, reason = "MissingNexo" }
+	end
+
+	return self:_damageRecord(record, damage)
+end
+
+function NexoService:DamageNexo(target: any, damage: any): { ok: boolean, reason: string?, hp: number? }
+	local record = nil
+	if typeof(target) == "string" then
+		record = self._nexos[target]
+	elseif typeof(target) == "Instance" then
+		for _, nexoId in self._nexoOrder do
+			local current = self._nexos[nexoId] :: NexoRecord
+			if target == current.Instance or target == current.RootPart or target:IsDescendantOf(current.Instance) then
+				record = current
+				break
+			end
+		end
+	end
+
+	if record == nil then
+		return { ok = false, reason = "MissingNexo" }
+	end
+
+	return self:_damageRecord(record, damage)
 end
 
 function NexoService:_resolveHexPartBelow(instance: Instance, taggedHexes: { Instance }): BasePart?
@@ -381,10 +501,15 @@ function NexoService:_createSnapshot(): any
 			id = record.Id,
 			tag = record.Tag,
 			instance = record.Instance,
+			rootPart = record.RootPart,
 			hexPart = record.HexPart,
+			territoryState = record.TerritoryState,
 			displayName = record.DisplayName,
 			lore = record.Lore,
 			state = record.State,
+			active = record.IsActive,
+			hp = record.HP,
+			maxHp = record.MaxHP,
 			selectedByUserId = record.SelectedByUserId,
 			takenByUserId = record.TakenByUserId,
 		})
@@ -420,14 +545,70 @@ function NexoService:_assignRecordToPlayer(player: Player, record: NexoRecord, a
 	record.State = NexoConfig.States.Taken
 	record.SelectedByUserId = nil
 	record.TakenByUserId = player.UserId
+	record.IsActive = record.HP > 0
 	self._assignedByPlayer[player] = record.Id
 	self._previewByPlayer[player] = nil
+	record.Instance:SetAttribute("NexoActive", record.IsActive)
+
+	if self._resourceService ~= nil then
+		self._resourceService:SetNexoActive(player, record.IsActive)
+	end
 
 	self.Client.NexoAssigned:Fire(player, {
 		nexoId = record.Id,
 		displayName = record.DisplayName,
 		automatic = automatic,
 	})
+end
+
+function NexoService:_damageRecord(record: NexoRecord, damage: any): { ok: boolean, reason: string?, hp: number? }
+	if not isPositiveFiniteNumber(damage) then
+		return { ok = false, reason = "InvalidDamage" }
+	end
+
+	if record.HP <= 0 then
+		return { ok = true, hp = 0 }
+	end
+
+	record.HP = math.max(0, record.HP - damage)
+	record.Instance:SetAttribute("HP", record.HP)
+
+	if record.HP <= 0 then
+		self:_deactivateRecord(record)
+	end
+
+	self:_broadcastSnapshot()
+	return { ok = true, hp = record.HP }
+end
+
+function NexoService:_deactivateRecord(record: NexoRecord)
+	if not record.IsActive then
+		return
+	end
+
+	record.IsActive = false
+	record.Instance:SetAttribute("NexoActive", false)
+
+	local userId = record.TakenByUserId
+	if userId == nil then
+		return
+	end
+
+	local player = Players:GetPlayerByUserId(userId)
+	if player == nil then
+		return
+	end
+
+	if self._resourceService ~= nil then
+		self._resourceService:SetNexoActive(player, false)
+	end
+
+	if self._gameService ~= nil then
+		self._gameService:DefeatPlayer(player, {
+			Reason = "NexoDestroyed",
+			NexoId = record.Id,
+		})
+	end
 end
 
 function NexoService:_startTimer(token: number)
@@ -462,16 +643,6 @@ function NexoService:_getAvailableRecords(): { NexoRecord }
 	return available
 end
 
-function NexoService:_getAnyRecords(): { NexoRecord }
-	local records = {}
-
-	for _, nexoId in self._nexoOrder do
-		table.insert(records, self._nexos[nexoId])
-	end
-
-	return records
-end
-
 function NexoService:_pickRecord(records: { NexoRecord }): NexoRecord?
 	if #records <= 0 then
 		return nil
@@ -490,28 +661,22 @@ function NexoService:_assignFallbacks()
 		local previewId = self._previewByPlayer[player]
 		if previewId ~= nil then
 			local previewRecord = self._nexos[previewId] :: NexoRecord?
-			if previewRecord ~= nil and previewRecord.State ~= NexoConfig.States.Taken then
+			if
+				previewRecord ~= nil
+				and previewRecord.State == NexoConfig.States.Selected
+				and previewRecord.SelectedByUserId == player.UserId
+			then
 				preferredRecord = previewRecord
 			end
 		end
 
-		local record = preferredRecord
-			or self:_pickRecord(self:_getAvailableRecords())
-			or self:_pickRecord(self:_getAnyRecords())
+		local record = preferredRecord or self:_pickRecord(self:_getAvailableRecords())
 		if record == nil then
+			warn(("[NexoService] No available Nexo for %s during automatic assignment"):format(player.Name))
 			continue
 		end
 
-		if record.State ~= NexoConfig.States.Taken then
-			self:_assignRecordToPlayer(player, record, true)
-		else
-			self._assignedByPlayer[player] = record.Id
-			self.Client.NexoAssigned:Fire(player, {
-				nexoId = record.Id,
-				displayName = record.DisplayName,
-				automatic = true,
-			})
-		end
+		self:_assignRecordToPlayer(player, record, true)
 	end
 
 	self:_broadcastSnapshot()

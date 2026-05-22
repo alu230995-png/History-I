@@ -64,6 +64,7 @@ local function BuildControls(props)
 		BackgroundColor3 = colors.Panel,
 		BackgroundTransparency = 0.08,
 		BorderSizePixel = 0,
+		Active = true,
 	}, {
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UDim.new(0, px(4)),

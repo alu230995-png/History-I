@@ -20,6 +20,7 @@ local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
 
 local BuildControls =
 	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("BuildControls"):WaitForChild("index"))
+local WorldInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("WorldInput"))
 
 type BuildTarget = {
 	socketName: string,
@@ -169,18 +170,6 @@ local function normalizeRotation(rotation: number): number
 	return (math.round(rotation / 60) * 60) % 360
 end
 
-local function guiObjectBlocksWorldInput(guiObject: GuiObject): boolean
-	if guiObject:IsA("GuiButton") or guiObject:IsA("TextBox") then
-		return true
-	end
-
-	if guiObject.Active then
-		return true
-	end
-
-	return guiObject.BackgroundTransparency < 1
-end
-
 function BuildController:KnitInit()
 	self._destroyed = false
 	self._trove = Trove.new()
@@ -227,6 +216,7 @@ function BuildController:KnitStart()
 
 	self._trove:Add(self._buildService.ResourcesChanged:Connect(function(resources)
 		self._resources = resources
+		self._hexSnapshotTarget = nil
 		self:_updatePreview()
 		self:_renderBuildUi()
 	end))
@@ -577,18 +567,7 @@ function BuildController:_isPointerOverBuildUi(pointerPosition: Vector2): boolea
 		return false
 	end
 
-	for _, guiObject in playerGui:GetGuiObjectsAtPosition(pointerPosition.X, pointerPosition.Y) do
-		local screenGui = guiObject:FindFirstAncestorOfClass("ScreenGui")
-		if
-			screenGui ~= nil
-			and (screenGui.Name == "BuildControlsGui" or screenGui.Name == "BuildingMenuGui" or screenGui.Name == "NexoSelectionGui")
-			and guiObjectBlocksWorldInput(guiObject)
-		then
-			return true
-		end
-	end
-
-	return false
+	return WorldInput.IsPointerBlocked(playerGui, pointerPosition)
 end
 
 function BuildController:_renderBuildUi(force: boolean?)
@@ -841,6 +820,10 @@ function BuildController:_validateLocalPlacement(
 	local snapshot = self:_getHexSnapshot(target)
 	if snapshot == nil then
 		return false, "MissingHex"
+	end
+
+	if snapshot.TerritoryAllowed ~= true then
+		return false, snapshot.TerritoryReason or "OutOfNexoState"
 	end
 
 	local socketSnapshot = if snapshot ~= nil and snapshot.Sockets ~= nil
