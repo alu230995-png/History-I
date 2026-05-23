@@ -20,7 +20,7 @@ dependencies = []
 [[package]]
 name = "gaming-naceb/history-i"
 version = "0.1.0"
-dependencies = [["Knit", "sleitnick/knit@1.7.0"], ["ProfileService", "brittonfischer/profileservice@2.1.5"], ["Promise", "evaera/promise@4.0.0"], ["React", "jsdotlua/react@17.2.1"], ["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["Reflex", "littensy/reflex@4.3.1"], ["ReplicaService", "brittonfischer/replicaservice@0.1.0"], ["Signal", "sleitnick/signal@2.0.3"], ["Trove", "sleitnick/trove@1.8.0"]]
+dependencies = [["Knit", "sleitnick/knit@1.7.0"], ["ProfileService", "brittonfischer/profileservice@2.1.5"], ["Promise", "evaera/promise@4.0.0"], ["React", "jsdotlua/react@17.2.1"], ["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["Reflex", "littensy/reflex@4.3.1"], ["ReplicaService", "brittonfischer/replicaservice@0.1.0"], ["Signal", "sleitnick/signal@2.0.3"], ["Trove", "sleitnick/trove@1.8.0"], ["UILabs", "pepeeltoro41/ui-labs@2.4.2"]]
 
 [[package]]
 name = "jsdotlua/boolean"
@@ -111,6 +111,11 @@ dependencies = [["collections", "jsdotlua/collections@1.2.7"]]
 name = "littensy/reflex"
 version = "4.3.1"
 dependencies = [["Promise", "evaera/promise@4.0.0"]]
+
+[[package]]
+name = "pepeeltoro41/ui-labs"
+version = "2.4.2"
+dependencies = []
 
 [[package]]
 name = "sleitnick/comm"

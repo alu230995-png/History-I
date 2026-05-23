@@ -1,94 +1,78 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Packages = ReplicatedStorage:WaitForChild("Packages")
-local React = require(Packages:WaitForChild("React"))
+local React = require(ReplicatedStorage:WaitForChild("Packages"):WaitForChild("React"))
 
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
+local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
+local sizes = UITheme.Sizes
+local spacing = UITheme.Spacing
+local textSizes = UITheme.TextSizes
+local transparency = UITheme.Transparency
 
 local function button(label: string, accent: Color3, enabled: boolean, activated)
-	return React.createElement("TextButton", {
-		Size = UDim2.fromOffset(px(118), px(42)),
-		BackgroundColor3 = if enabled then colors.PanelRaised else Color3.fromRGB(38, 40, 40),
-		BorderSizePixel = 0,
-		AutoButtonColor = enabled,
-		Active = enabled,
-		Font = Enum.Font.GothamBold,
-		Text = label,
-		TextColor3 = if enabled then colors.Text else colors.MutedText,
-		TextSize = px(12),
-		TextWrapped = true,
-		[React.Event.Activated] = if enabled then activated else nil,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = px(1),
-			Transparency = if enabled then 0.12 else 0.45,
-		}),
+	return React.createElement(TacticalButton, {
+		width = sizes.ButtonWideWidth,
+		height = sizes.ButtonHeight - spacing.Xxs,
+		label = label,
+		accent = accent,
+		enabled = enabled,
+		TextSize = textSizes.Button,
+		onActivated = activated,
 	})
 end
 
 local function inviteToast(invite, name: string, layoutOrder: number, onAccept, onReject)
-	return React.createElement("Frame", {
+	return React.createElement(Panel, {
 		LayoutOrder = layoutOrder,
 		AutomaticSize = Enum.AutomaticSize.XY,
-		BackgroundColor3 = colors.Panel,
-		BackgroundTransparency = 0.04,
-		BorderSizePixel = 0,
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.Panel,
+		strokeColor = colors.Amber,
+		strokeTransparency = transparency.StrokeStrong,
+		padding = {
+			Y = spacing.Xs + spacing.Lg,
+			X = spacing.Panel,
+		},
+		layout = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		gap = spacing.Xl,
 		Active = true,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = colors.Amber,
-			Thickness = px(1),
-			Transparency = 0.1,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(9)),
-			PaddingBottom = UDim.new(0, px(9)),
-			PaddingLeft = UDim.new(0, px(10)),
-			PaddingRight = UDim.new(0, px(10)),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(7)),
-		}),
-		Text = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			Size = UDim2.fromOffset(px(224), px(34)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
-			Text = `ALIANZA: {string.upper(name)}`,
-			TextColor3 = colors.Text,
-			TextSize = px(12),
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}),
-		Actions = React.createElement("Frame", {
-			LayoutOrder = 2,
-			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
-		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(8)),
+		children = {
+			Text = React.createElement(Text, {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(
+					px(sizes.PanelWidth - sizes.ButtonLargeHeight),
+					px(sizes.ButtonCompactHeight - spacing.Lg)
+				),
+				variant = "Title",
+				Text = `ALIANZA: {string.upper(name)}`,
+				TextSize = textSizes.Button,
+				TextWrapped = true,
+				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
-			Accept = button("ACEPTAR", colors.Green, true, function()
-				onAccept(invite.id)
-			end),
-			Reject = button("RECHAZAR", colors.Red, true, function()
-				onReject(invite.id)
-			end),
-		}),
+			Actions = React.createElement("Frame", {
+				LayoutOrder = 2,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundTransparency = transparency.Clear,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, px(spacing.XXl)),
+				}),
+				Accept = button("ACEPTAR", colors.Green, true, function()
+					onAccept(invite.id)
+				end),
+				Reject = button("RECHAZAR", colors.Red, true, function()
+					onReject(invite.id)
+				end),
+			}),
+		},
 	})
 end
 
@@ -101,47 +85,32 @@ local function selectedPanel(props)
 	local enabled = props.actionEnabled == true
 	local accent = if props.actionKind == "Break" then colors.Red else colors.Green
 
-	return React.createElement("Frame", {
+	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -px(150)),
+		Position = UDim2.new(0.5, 0, 1, -px(sizes.UnitSelectionPanelHeight + spacing.Sm)),
 		AutomaticSize = Enum.AutomaticSize.XY,
-		BackgroundColor3 = colors.Panel,
-		BackgroundTransparency = 0.04,
-		BorderSizePixel = 0,
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.Panel,
+		strokeColor = accent,
+		strokeTransparency = transparency.StrokeStrong,
+		padding = {
+			Y = spacing.Panel,
+			X = spacing.Wide,
+		},
+		layout = Enum.FillDirection.Vertical,
+		gap = spacing.XXl,
 		Active = true,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = px(1),
-			Transparency = 0.1,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(10)),
-			PaddingBottom = UDim.new(0, px(10)),
-			PaddingLeft = UDim.new(0, px(12)),
-			PaddingRight = UDim.new(0, px(12)),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(8)),
-		}),
-		Name = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			Size = UDim2.fromOffset(px(260), px(24)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
-			Text = string.upper(selected.name),
-			TextColor3 = colors.Text,
-			TextSize = px(15),
-			TextWrapped = true,
-		}),
-		Action = button(props.actionLabel or "ALIANZA", accent, enabled, props.onAction),
-		Close = button("CERRAR", colors.Stroke, true, props.onClose),
+		children = {
+			Name = React.createElement(Text, {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(px(sizes.PanelWidth - spacing.Wide), px(spacing.Bottom + spacing.Xxs)),
+				variant = "Title",
+				Text = string.upper(selected.name),
+				TextWrapped = true,
+			}),
+			Action = button(props.actionLabel or "ALIANZA", accent, enabled, props.onAction),
+			Close = button("CERRAR", colors.Stroke, true, props.onClose),
+		},
 	})
 end
 
@@ -150,7 +119,7 @@ local function DiplomacyPanel(props)
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(8)),
+			Padding = UDim.new(0, px(spacing.XXl)),
 		}),
 	}
 
@@ -168,15 +137,15 @@ local function DiplomacyPanel(props)
 
 	return React.createElement("Frame", {
 		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
+		BackgroundTransparency = transparency.Clear,
 		BorderSizePixel = 0,
 		Active = false,
 	}, {
 		Invites = React.createElement("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, px(14), 0.5, 0),
+			Position = UDim2.new(0, px(spacing.Loose), 0.5, 0),
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, inviteChildren),
 		Selected = selectedPanel(props),
 	})

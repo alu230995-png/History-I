@@ -42,6 +42,28 @@ type NexoRecord = {
 	TakenByUserId: number?,
 }
 
+local function getStringAttribute(instance: Instance?, attributeName: string): string?
+	if instance == nil then
+		return nil
+	end
+
+	local value = instance:GetAttribute(attributeName)
+	return if typeof(value) == "string" and value ~= "" then value else nil
+end
+
+local function getNexoContainer(instance: Instance): Instance
+	if instance:IsA("Model") then
+		return instance
+	end
+
+	local model = instance:FindFirstAncestorOfClass("Model")
+	if model ~= nil and model ~= Workspace then
+		return model
+	end
+
+	return instance
+end
+
 local function findTaggedHexPart(instance: Instance?): BasePart?
 	local current = instance
 
@@ -95,9 +117,10 @@ local function isPositiveFiniteNumber(value: any): boolean
 	return typeof(value) == "number" and value > 0 and value == value and math.abs(value) < math.huge
 end
 
-local function formatDisplayName(tag: string, instance: Instance): string
-	local attributeName = instance:GetAttribute("DisplayName")
-	if typeof(attributeName) == "string" and attributeName ~= "" then
+local function formatDisplayName(tag: string, instance: Instance, sourceInstance: Instance): string
+	local attributeName = getStringAttribute(instance, "DisplayName")
+		or getStringAttribute(sourceInstance, "DisplayName")
+	if attributeName ~= nil then
 		return attributeName
 	end
 
@@ -108,18 +131,18 @@ local function formatDisplayName(tag: string, instance: Instance): string
 	return name
 end
 
-local function getLore(displayName: string, instance: Instance): string
-	local lore = instance:GetAttribute("Lore")
-	if typeof(lore) == "string" and lore ~= "" then
+local function getLore(displayName: string, instance: Instance, sourceInstance: Instance): string
+	local lore = getStringAttribute(instance, "Lore") or getStringAttribute(sourceInstance, "Lore")
+	if lore ~= nil then
 		return lore
 	end
 
 	return NexoConfig.GetDefaultLore(displayName)
 end
 
-local function createNexoId(tag: string, instance: Instance, index: number): string
-	local attributeId = instance:GetAttribute("NexoId")
-	if typeof(attributeId) == "string" and attributeId ~= "" then
+local function createNexoId(tag: string, instance: Instance, sourceInstance: Instance, index: number): string
+	local attributeId = getStringAttribute(instance, "NexoId") or getStringAttribute(sourceInstance, "NexoId")
+	if attributeId ~= nil then
 		return attributeId
 	end
 
@@ -250,7 +273,7 @@ function NexoService:DiscoverNexos()
 	local allTags = CollectionService:GetAllTags()
 	local nexoTags = {}
 	for _, tag in allTags do
-		if string.find(tag, NexoConfig.TagKeyword) ~= nil then
+		if BuildingConfig.IsNexoTag(tag) then
 			table.insert(nexoTags, tag)
 		end
 	end
@@ -263,7 +286,8 @@ function NexoService:DiscoverNexos()
 
 	for _, tag in nexoTags do
 		for _, instance in CollectionService:GetTagged(tag) do
-			local rootPart = getNexoRootPart(instance)
+			local nexoInstance = getNexoContainer(instance)
+			local rootPart = getNexoRootPart(nexoInstance)
 			if rootPart == nil then
 				warn(("[NexoService] Nexo %s has no root BasePart"):format(instance:GetFullName()))
 				continue
@@ -282,10 +306,10 @@ function NexoService:DiscoverNexos()
 			end
 
 			nextIndex += 1
-			local displayName = formatDisplayName(tag, instance)
-			local nexoId = createNexoId(tag, instance, nextIndex)
+			local displayName = formatDisplayName(tag, nexoInstance, instance)
+			local nexoId = createNexoId(tag, nexoInstance, instance, nextIndex)
 			local blocked = self._buildService ~= nil
-				and self._buildService:BlockHexCenter(hexPart, NexoConfig.BlockReason, instance)
+				and self._buildService:BlockHexCenter(hexPart, NexoConfig.BlockReason, nexoInstance)
 
 			if not blocked then
 				warn(("[NexoService] Could not block hex for %s"):format(instance:GetFullName()))
@@ -299,12 +323,12 @@ function NexoService:DiscoverNexos()
 			self._nexos[nexoId] = {
 				Id = nexoId,
 				Tag = tag,
-				Instance = instance,
+				Instance = nexoInstance,
 				RootPart = rootPart,
 				HexPart = hexPart,
 				TerritoryState = getHexState(hexPart),
 				DisplayName = displayName,
-				Lore = getLore(displayName, instance),
+				Lore = getLore(displayName, nexoInstance, instance),
 				State = NexoConfig.States.Available,
 				IsActive = false,
 				HP = NexoConfig.HP,
@@ -312,9 +336,9 @@ function NexoService:DiscoverNexos()
 				SelectedByUserId = nil,
 				TakenByUserId = nil,
 			}
-			instance:SetAttribute("HP", NexoConfig.HP)
-			instance:SetAttribute("MaxHP", NexoConfig.HP)
-			instance:SetAttribute("NexoActive", false)
+			nexoInstance:SetAttribute("HP", NexoConfig.HP)
+			nexoInstance:SetAttribute("MaxHP", NexoConfig.HP)
+			nexoInstance:SetAttribute("NexoActive", false)
 		end
 	end
 

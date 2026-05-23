@@ -7,20 +7,18 @@ local React = require(Packages:WaitForChild("React"))
 
 local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("BuildingConfig"))
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local IconFrame = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("IconFrame"))
+local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
+local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
+local UIHelpers = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("UIHelpers"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
-
-local PLACEHOLDER_IMAGE = "rbxassetid://6031075938"
-
-local function getViewportSize(props): Vector2
-	local viewportSize = props.viewportSize
-	return if typeof(viewportSize) == "Vector2"
-			and viewportSize.X > 0
-			and viewportSize.Y > 0
-		then viewportSize
-		else Vector2.new(1280, 720)
-end
+local sizes = UITheme.Sizes
+local spacing = UITheme.Spacing
+local textSizes = UITheme.TextSizes
+local transparency = UITheme.Transparency
 
 local function getGold(resources): number
 	if resources ~= nil and typeof(resources.Gold) == "number" then
@@ -40,7 +38,7 @@ local function createBuildingItems()
 				Type = buildingType,
 				DisplayName = definition.DisplayName or string.upper(buildingType),
 				Gold = definition.Gold or 0,
-				Icon = definition.Icon or PLACEHOLDER_IMAGE,
+				Icon = definition.Icon or UITheme.Assets.PlaceholderIcon,
 			})
 		end
 	end
@@ -56,16 +54,13 @@ local function BuildingCard(props)
 	local onSelect = props.onSelectBuilding
 	local gold = getGold(resources)
 	local canAfford = gold >= item.Gold
-	local cardColor = if canAfford then colors.PanelRaised else Color3.fromRGB(29, 29, 28)
-	local priceColor = if canAfford then colors.Amber else colors.Red
-	local strokeColor = if canAfford then colors.Stroke else colors.Red
-	local imageTransparency = if canAfford then 0 else 0.45
 	local compact = props.compact == true
+	local textColor = if canAfford then colors.Text else colors.MutedText
 
 	return React.createElement("TextButton", {
 		LayoutOrder = props.LayoutOrder,
-		BackgroundColor3 = cardColor,
-		BackgroundTransparency = if canAfford then 0.02 else 0.18,
+		BackgroundColor3 = if canAfford then colors.PanelRaised else colors.PanelDim,
+		BackgroundTransparency = if canAfford then transparency.PanelLight else transparency.PanelDim,
 		BorderSizePixel = 0,
 		AutoButtonColor = canAfford,
 		Text = "",
@@ -77,70 +72,55 @@ local function BuildingCard(props)
 			else nil,
 	}, {
 		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
+			CornerRadius = UITheme.Radii.Panel,
 		}),
 		Stroke = React.createElement("UIStroke", {
-			Color = strokeColor,
-			Thickness = px(1),
-			Transparency = if canAfford then 0.18 else 0.05,
+			Color = if canAfford then colors.Stroke else colors.Red,
+			Thickness = px(UITheme.Strokes.Thin),
+			Transparency = if canAfford then transparency.StrokeSoft else transparency.StrokeStrong,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(10)),
-			PaddingBottom = UDim.new(0, px(10)),
-			PaddingLeft = UDim.new(0, px(10)),
-			PaddingRight = UDim.new(0, px(10)),
+			PaddingTop = UDim.new(0, px(spacing.Panel)),
+			PaddingBottom = UDim.new(0, px(spacing.Panel)),
+			PaddingLeft = UDim.new(0, px(spacing.Panel)),
+			PaddingRight = UDim.new(0, px(spacing.Panel)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Top,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(8)),
+			Padding = UDim.new(0, px(spacing.XXl)),
 		}),
-		Name = React.createElement("TextLabel", {
+		Name = React.createElement(Text, {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, if compact then px(24) else px(32)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
+			Size = UDim2.new(1, 0, 0, if compact then px(spacing.Bottom + spacing.Xxs) else px(sizes.AvatarImage)),
+			variant = "Title",
 			Text = string.upper(item.DisplayName),
-			TextColor3 = if canAfford then colors.Text else colors.MutedText,
-			TextSize = if compact then px(11) else px(12),
+			TextColor3 = textColor,
+			TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
 			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextYAlignment = Enum.TextYAlignment.Center,
 		}),
-		IconContainer = React.createElement("Frame", {
+		IconContainer = React.createElement(IconFrame, {
 			LayoutOrder = 2,
-			Size = if compact then UDim2.fromOffset(px(54), px(42)) else UDim2.fromOffset(px(70), px(58)),
-			BackgroundColor3 = colors.Panel,
-			BackgroundTransparency = 0.16,
-			BorderSizePixel = 0,
-		}, {
-			Stroke = React.createElement("UIStroke", {
-				Color = colors.Stroke,
-				Thickness = px(1),
-				Transparency = 0.45,
-			}),
-			Icon = React.createElement("ImageLabel", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = if compact then UDim2.fromOffset(px(32), px(32)) else UDim2.fromOffset(px(44), px(44)),
-				BackgroundTransparency = 1,
-				Image = item.Icon,
-				ImageColor3 = if canAfford then colors.Text else colors.MutedText,
-				ImageTransparency = imageTransparency,
-				ScaleType = Enum.ScaleType.Fit,
-			}),
+			width = if compact then sizes.IconContainerCompactWidth else sizes.IconContainerWidth,
+			height = if compact then sizes.IconContainerCompactHeight else sizes.IconContainerHeight,
+			backgroundColor = colors.Panel,
+			backgroundTransparency = transparency.PanelMuted,
+			strokeColor = colors.Stroke,
+			strokeTransparency = transparency.StrokeMuted,
+			image = item.Icon,
+			imageColor = textColor,
+			imageTransparency = if canAfford then transparency.Solid else transparency.IconDisabled,
+			iconSize = if compact then sizes.IconCardCompact else sizes.IconCard,
 		}),
-		Price = React.createElement("TextLabel", {
+		Price = React.createElement(Text, {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, if compact then px(18) else px(22)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Size = UDim2.new(1, 0, 0, if compact then px(textSizes.Heading) else px(spacing.Bottom)),
+			variant = "Value",
 			Text = `{item.Gold} ORO`,
-			TextColor3 = priceColor,
-			TextSize = if compact then px(11) else px(13),
-			TextXAlignment = Enum.TextXAlignment.Center,
+			TextColor3 = if canAfford then colors.Amber else colors.Red,
+			TextSize = if compact then textSizes.ButtonSmall else textSizes.Meta,
 		}),
 	})
 end
@@ -150,24 +130,39 @@ local function NexoBuildMenu(props)
 		return nil
 	end
 
-	local viewportSize = getViewportSize(props)
-	local compact = props.isMobile == true or viewportSize.X <= 720 or viewportSize.Y <= 520
-	local panelWidth = if compact then math.max(px(286), math.min(px(340), viewportSize.X - px(24))) else px(390)
-	local panelHeight = if compact then math.max(px(278), math.min(px(348), viewportSize.Y - px(124))) else px(428)
-	local headerHeight = if compact then px(42) else px(48)
-	local scrollHeight = math.max(px(190), panelHeight - headerHeight - px(58))
-	local cellHeight = if compact then px(112) else px(154)
+	local viewportSize = UIHelpers.getViewportSize(props)
+	local compact = UIHelpers.isCompact(props)
+	local panelWidth = if compact
+		then math.max(
+			px(sizes.NexoBuildCompactMinWidth),
+			math.min(px(sizes.NexoBuildCompactMaxWidth), viewportSize.X - px(spacing.Bottom + spacing.Xxs))
+		)
+		else px(sizes.NexoBuildPanelWidth)
+	local panelHeight = if compact
+		then math.max(
+			px(sizes.NexoBuildCompactMinHeight),
+			math.min(px(sizes.NexoBuildCompactMaxHeight), viewportSize.Y - px(sizes.ButtonWideWidth + spacing.Lg))
+		)
+		else px(sizes.NexoBuildPanelHeight)
+	local headerHeight = if compact then px(sizes.ButtonCompactHeight + spacing.Xxs) else px(sizes.ButtonLargeHeight)
+	local scrollHeight = math.max(
+		px(sizes.ButtonBuildMaxWidth + spacing.Bottom),
+		panelHeight - headerHeight - px(sizes.IconContainerCompactWidth + spacing.Sm)
+	)
+	local cellHeight = if compact then px(sizes.BuildingCardCompactHeight) else px(sizes.BuildingCardHeight)
 
 	local children = {
 		Grid = React.createElement("UIGridLayout", {
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			FillDirection = Enum.FillDirection.Horizontal,
 			FillDirectionMaxCells = if compact then 1 else 2,
-			CellPadding = UDim2.fromOffset(px(8), if compact then px(6) else px(8)),
-			CellSize = if compact then UDim2.new(1, -px(6), 0, cellHeight) else UDim2.new(0.5, -px(4), 0, cellHeight),
+			CellPadding = UDim2.fromOffset(px(spacing.XXl), if compact then px(spacing.Lg) else px(spacing.XXl)),
+			CellSize = if compact
+				then UDim2.new(1, -px(spacing.Lg), 0, cellHeight)
+				else UDim2.new(0.5, -px(spacing.Sm), 0, cellHeight),
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingRight = UDim.new(0, px(6)),
+			PaddingRight = UDim.new(0, px(spacing.Lg)),
 		}),
 	}
 
@@ -183,106 +178,84 @@ local function NexoBuildMenu(props)
 
 	return React.createElement("Frame", {
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.58,
+		BackgroundColor3 = colors.Scrim,
+		BackgroundTransparency = transparency.ScrimStrong,
 		BorderSizePixel = 0,
 		Active = true,
 	}, {
-		NexoBuildPanel = React.createElement("Frame", {
+		NexoBuildPanel = React.createElement(Panel, {
 			AnchorPoint = if compact then Vector2.new(1, 0.5) else Vector2.new(0.5, 0.5),
-			Position = if compact then UDim2.new(1, -px(12), 0.5, 0) else UDim2.fromScale(0.5, 0.5),
-			Size = if compact then UDim2.fromOffset(panelWidth, panelHeight) else UDim2.new(1, -px(24), 0, px(428)),
-			BackgroundColor3 = colors.Panel,
-			BackgroundTransparency = 0.02,
-			BorderSizePixel = 0,
-		}, {
-			Width = React.createElement("UISizeConstraint", {
-				MinSize = if compact then Vector2.new(px(286), px(278)) else Vector2.new(px(292), px(428)),
-				MaxSize = if compact then Vector2.new(panelWidth, panelHeight) else Vector2.new(px(390), px(428)),
+			Position = if compact then UDim2.new(1, -px(spacing.Wide), 0.5, 0) else UDim2.fromScale(0.5, 0.5),
+			Size = if compact
+				then UDim2.fromOffset(panelWidth, panelHeight)
+				else UDim2.new(1, -px(spacing.Bottom + spacing.Xxs), 0, px(sizes.NexoBuildPanelHeight)),
+			backgroundColor = colors.Panel,
+			backgroundTransparency = transparency.PanelLight,
+			strokeColor = colors.Amber,
+			strokeTransparency = transparency.StrokeStrong,
+			padding = spacing.Loose,
+			layout = Enum.FillDirection.Vertical,
+			gap = spacing.Panel,
+			SizeConstraint = React.createElement("UISizeConstraint", {
+				MinSize = if compact
+					then Vector2.new(px(sizes.NexoBuildCompactMinWidth), px(sizes.NexoBuildCompactMinHeight))
+					else Vector2.new(
+						px(sizes.UnitSelectionPanelWidth + spacing.Panel),
+						px(sizes.NexoBuildPanelHeight)
+					),
+				MaxSize = if compact
+					then Vector2.new(panelWidth, panelHeight)
+					else Vector2.new(px(sizes.NexoBuildPanelWidth), px(sizes.NexoBuildPanelHeight)),
 			}),
-			Corner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(0, px(4)),
-			}),
-			Stroke = React.createElement("UIStroke", {
-				Color = colors.Amber,
-				Thickness = px(1),
-				Transparency = 0.08,
-			}),
-			Padding = React.createElement("UIPadding", {
-				PaddingTop = UDim.new(0, px(14)),
-				PaddingBottom = UDim.new(0, px(14)),
-				PaddingLeft = UDim.new(0, px(14)),
-				PaddingRight = UDim.new(0, px(14)),
-			}),
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Vertical,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(10)),
-			}),
-			Header = React.createElement("Frame", {
-				LayoutOrder = 1,
-				Size = UDim2.new(1, 0, 0, headerHeight),
-				BackgroundTransparency = 1,
-			}, {
-				Title = React.createElement("TextLabel", {
-					AnchorPoint = Vector2.new(0, 0.5),
-					Position = UDim2.fromScale(0, 0.5),
-					Size = UDim2.new(1, -px(112), 1, 0),
-					BackgroundTransparency = 1,
-					Font = Enum.Font.GothamBold,
-					Text = "NEXO",
-					TextColor3 = colors.Text,
-					TextSize = px(19),
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Center,
-				}),
-				Gold = React.createElement("TextLabel", {
-					AnchorPoint = Vector2.new(0, 1),
-					Position = UDim2.fromScale(0, 1),
-					Size = UDim2.new(1, -px(112), 0, px(18)),
-					BackgroundTransparency = 1,
-					Font = Enum.Font.Code,
-					Text = `{getGold(props.resources)} ORO`,
-					TextColor3 = colors.Amber,
-					TextSize = px(12),
-					TextXAlignment = Enum.TextXAlignment.Left,
-				}),
-				Close = React.createElement("TextButton", {
-					AnchorPoint = Vector2.new(1, 0.5),
-					Position = UDim2.fromScale(1, 0.5),
-					Size = if compact then UDim2.fromOffset(px(78), px(40)) else UDim2.fromOffset(px(96), px(44)),
-					BackgroundColor3 = colors.PanelRaised,
-					BorderSizePixel = 0,
-					AutoButtonColor = true,
-					Font = Enum.Font.GothamBold,
-					Text = "CERRAR",
-					TextColor3 = colors.Text,
-					TextSize = if compact then px(11) else px(12),
-					[React.Event.Activated] = props.onClose,
+			children = {
+				Header = React.createElement("Frame", {
+					LayoutOrder = 1,
+					Size = UDim2.new(1, 0, 0, headerHeight),
+					BackgroundTransparency = transparency.Clear,
 				}, {
-					Corner = React.createElement("UICorner", {
-						CornerRadius = UDim.new(0, px(3)),
+					Title = React.createElement(Text, {
+						AnchorPoint = Vector2.new(0, 0.5),
+						Position = UDim2.fromScale(0, 0.5),
+						Size = UDim2.new(1, -px(sizes.ButtonLargeWidth + spacing.XXl), 1, 0),
+						variant = "Title",
+						Text = "NEXO",
+						TextSize = textSizes.HudTitle,
+						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-					Stroke = React.createElement("UIStroke", {
-						Color = colors.Red,
-						Thickness = px(1),
-						Transparency = 0.12,
+					Gold = React.createElement(Text, {
+						AnchorPoint = Vector2.new(0, 1),
+						Position = UDim2.fromScale(0, 1),
+						Size = UDim2.new(1, -px(sizes.ButtonLargeWidth + spacing.XXl), 0, px(textSizes.Heading)),
+						variant = "Mono",
+						Text = `{getGold(props.resources)} ORO`,
+						TextColor3 = colors.Amber,
+						TextSize = textSizes.Button,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					}),
+					Close = React.createElement(TacticalButton, {
+						AnchorPoint = Vector2.new(1, 0.5),
+						Position = UDim2.fromScale(1, 0.5),
+						width = if compact then sizes.ButtonSmallWidth else sizes.ButtonMediumWidth,
+						height = if compact then sizes.ButtonCompactHeight else sizes.ButtonHeight,
+						label = "CERRAR",
+						accent = colors.Red,
+						TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
+						onActivated = props.onClose,
 					}),
 				}),
-			}),
-			Scroll = React.createElement("ScrollingFrame", {
-				LayoutOrder = 2,
-				Size = UDim2.new(1, 0, 0, scrollHeight),
-				BackgroundTransparency = 1,
-				BorderSizePixel = 0,
-				Active = true,
-				AutomaticCanvasSize = Enum.AutomaticSize.Y,
-				CanvasSize = UDim2.fromScale(0, 0),
-				ScrollBarThickness = px(4),
-				ScrollingDirection = Enum.ScrollingDirection.Y,
-				ScrollingEnabled = true,
-			}, children),
+				Scroll = React.createElement("ScrollingFrame", {
+					LayoutOrder = 2,
+					Size = UDim2.new(1, 0, 0, scrollHeight),
+					BackgroundTransparency = transparency.Clear,
+					BorderSizePixel = 0,
+					Active = true,
+					AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					CanvasSize = UDim2.fromScale(0, 0),
+					ScrollBarThickness = px(spacing.Sm),
+					ScrollingDirection = Enum.ScrollingDirection.Y,
+					ScrollingEnabled = true,
+				}, children),
+			},
 		}),
 	})
 end

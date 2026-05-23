@@ -6,6 +6,7 @@ local SelectionConfig =
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
 
 local px = UITheme.sp
+local strokes = UITheme.Strokes
 local visuals = SelectionConfig.Visuals
 
 local function SelectionAreaOverlay(props)
@@ -24,7 +25,7 @@ local function SelectionAreaOverlay(props)
 	}, {
 		Stroke = React.createElement("UIStroke", {
 			Color = visuals.AreaColor,
-			Thickness = px(1),
+			Thickness = px(strokes.Thin),
 			Transparency = visuals.AreaStrokeTransparency,
 		}),
 	})

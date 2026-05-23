@@ -9,19 +9,20 @@ local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("Bu
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local SelectionConfig = require(Shared:WaitForChild("Constants"):WaitForChild("SelectionConfig"))
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
+local ProgressBar = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("ProgressBar"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
+local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
+local UIHelpers = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("UIHelpers"))
+local UnitChip = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("UnitChip"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
+local sizes = UITheme.Sizes
+local spacing = UITheme.Spacing
+local textSizes = UITheme.TextSizes
+local transparency = UITheme.Transparency
 local panelConfig = SelectionConfig.Panel
-
-local function getViewportSize(props): Vector2
-	local viewportSize = props.viewportSize
-	return if typeof(viewportSize) == "Vector2"
-			and viewportSize.X > 0
-			and viewportSize.Y > 0
-		then viewportSize
-		else Vector2.new(1280, 720)
-end
 
 local function commandButton(
 	label: string,
@@ -31,30 +32,15 @@ local function commandButton(
 	activated,
 	compact: boolean?
 )
-	return React.createElement("TextButton", {
+	return React.createElement(TacticalButton, {
 		LayoutOrder = order,
-		Size = if compact
-			then UDim2.fromOffset(px(78), px(panelConfig.MinTouchSize))
-			else UDim2.fromOffset(px(104), px(panelConfig.MinTouchSize)),
-		BackgroundColor3 = if enabled then colors.PanelRaised else Color3.fromRGB(38, 40, 40),
-		BorderSizePixel = 0,
-		AutoButtonColor = enabled,
-		Active = enabled,
-		Font = Enum.Font.GothamBold,
-		Text = label,
-		TextColor3 = if enabled then colors.Text else colors.MutedText,
-		TextSize = if compact then px(9) else px(11),
-		TextWrapped = true,
-		[React.Event.Activated] = if enabled then activated else nil,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = px(1),
-			Transparency = if enabled then 0.12 else 0.5,
-		}),
+		width = if compact then sizes.CommandButtonCompactWidth else sizes.CommandButtonWidth,
+		height = panelConfig.MinTouchSize,
+		label = label,
+		accent = accent,
+		enabled = enabled,
+		TextSize = if compact then textSizes.Tiny + UITheme.Spacing.Hairline else textSizes.ButtonSmall,
+		onActivated = activated,
 	})
 end
 
@@ -62,48 +48,19 @@ local function unitCard(unit, order: number, onDeselect, compact: boolean?)
 	local definition = ManpowerConfig.GetUnit(unit.UnitType)
 	local displayName = if definition ~= nil then definition.DisplayName else unit.UnitType
 
-	return React.createElement("TextButton", {
+	return React.createElement(UnitChip, {
 		LayoutOrder = order,
-		Size = if compact then UDim2.fromOffset(px(42), px(42)) else UDim2.fromOffset(px(48), px(48)),
-		BackgroundColor3 = colors.PanelRaised,
-		BackgroundTransparency = 0.03,
-		BorderSizePixel = 0,
-		AutoButtonColor = true,
-		Text = "",
-		[React.Event.Activated] = function()
+		compact = compact,
+		size = if compact then sizes.UnitChipCompact else sizes.UnitChip,
+		iconSize = if compact then sizes.IconCompact else sizes.IconLarge,
+		label = displayName,
+		icon = if definition ~= nil
+			then definition.Icon or ManpowerConfig.PlaceholderIcon
+			else ManpowerConfig.PlaceholderIcon,
+		TextSize = if compact then textSizes.Micro else textSizes.Unit,
+		onActivated = function()
 			onDeselect(unit.UnitId)
 		end,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = colors.Text,
-			Thickness = px(1),
-			Transparency = 0.12,
-		}),
-		Icon = React.createElement("ImageLabel", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.42),
-			Size = if compact then UDim2.fromOffset(px(23), px(23)) else UDim2.fromOffset(px(27), px(27)),
-			BackgroundTransparency = 1,
-			Image = if definition ~= nil
-				then definition.Icon or ManpowerConfig.PlaceholderIcon
-				else ManpowerConfig.PlaceholderIcon,
-			ImageColor3 = colors.Text,
-			ScaleType = Enum.ScaleType.Fit,
-		}),
-		Label = React.createElement("TextLabel", {
-			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -px(3)),
-			Size = UDim2.new(1, -px(5), 0, px(11)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
-			Text = displayName,
-			TextColor3 = colors.MutedText,
-			TextSize = if compact then px(6) else px(7),
-			TextTruncate = Enum.TextTruncate.AtEnd,
-		}),
 	})
 end
 
@@ -116,13 +73,18 @@ local function unitStrip(units, onDeselect, compact: boolean?)
 		Grid = React.createElement("UIGridLayout", {
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			FillDirection = Enum.FillDirection.Horizontal,
-			FillDirectionMaxCells = if compact then 5 else 6,
-			CellPadding = UDim2.fromOffset(if compact then px(5) else px(6), if compact then px(5) else px(6)),
-			CellSize = if compact then UDim2.fromOffset(px(42), px(42)) else UDim2.fromOffset(px(48), px(48)),
+			FillDirectionMaxCells = if compact then spacing.Md else spacing.Lg,
+			CellPadding = UDim2.fromOffset(
+				if compact then px(spacing.Md) else px(spacing.Lg),
+				if compact then px(spacing.Md) else px(spacing.Lg)
+			),
+			CellSize = if compact
+				then UDim2.fromOffset(px(sizes.UnitChipCompact), px(sizes.UnitChipCompact))
+				else UDim2.fromOffset(px(sizes.UnitChip), px(sizes.UnitChip)),
 		}),
 	}
 
-	local visibleCount = math.min(#units, if compact then 4 else 6)
+	local visibleCount = math.min(#units, if compact then spacing.Sm else spacing.Lg)
 	for index = 1, visibleCount do
 		local unit = units[index]
 		children[unit.UnitId] = unitCard(unit, index, onDeselect, compact)
@@ -130,34 +92,39 @@ local function unitStrip(units, onDeselect, compact: boolean?)
 
 	if #units > visibleCount then
 		children.Overflow = React.createElement("Frame", {
-			LayoutOrder = 7,
-			Size = if compact then UDim2.fromOffset(px(42), px(42)) else UDim2.fromOffset(px(48), px(48)),
+			LayoutOrder = spacing.Xl,
+			Size = if compact
+				then UDim2.fromOffset(px(sizes.UnitChipCompact), px(sizes.UnitChipCompact))
+				else UDim2.fromOffset(px(sizes.UnitChip), px(sizes.UnitChip)),
 			BackgroundColor3 = colors.PanelRaised,
 			BorderSizePixel = 0,
 		}, {
 			Corner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(0, px(3)),
+				CornerRadius = UITheme.Radii.Control,
 			}),
 			Stroke = React.createElement("UIStroke", {
 				Color = colors.Amber,
-				Thickness = px(1),
-				Transparency = 0.1,
+				Thickness = px(UITheme.Strokes.Thin),
+				Transparency = transparency.StrokeStrong,
 			}),
-			Count = React.createElement("TextLabel", {
+			Count = React.createElement(Text, {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Font = Enum.Font.GothamBold,
+				variant = "Title",
 				Text = `+{#units - visibleCount}`,
-				TextColor3 = colors.Text,
-				TextSize = px(15),
+				TextSize = textSizes.Title,
 			}),
 		})
 	end
 
 	return React.createElement("Frame", {
 		LayoutOrder = 4,
-		Size = UDim2.new(1, 0, 0, if compact then px(46) else px(102)),
-		BackgroundTransparency = 1,
+		Size = UDim2.new(
+			1,
+			0,
+			0,
+			if compact then px(sizes.UnitChip + spacing.Xxs) else px(sizes.UnitCardHeight + spacing.Panel)
+		),
+		BackgroundTransparency = transparency.Clear,
 	}, children)
 end
 
@@ -172,46 +139,44 @@ end
 local function queueSlot(entry, order: number, compact: boolean?)
 	local definition = if entry ~= nil then ManpowerConfig.GetUnit(entry.UnitType) else nil
 	local progress = if entry ~= nil and typeof(entry.Progress) == "number" then math.clamp(entry.Progress, 0, 1) else 0
+	local slotWidth = if compact then sizes.QueueSlotCompactWidth else sizes.QueueSlotWidth
+	local slotHeight = if compact then sizes.QueueSlotCompactHeight else sizes.QueueSlotHeight
 
 	return React.createElement("Frame", {
 		LayoutOrder = order,
-		Size = if compact then UDim2.fromOffset(px(44), px(32)) else UDim2.fromOffset(px(54), px(36)),
+		Size = UDim2.fromOffset(px(slotWidth), px(slotHeight)),
 		BackgroundColor3 = if entry ~= nil then colors.PanelRaised else colors.Panel,
-		BackgroundTransparency = if entry ~= nil then 0.04 else 0.18,
+		BackgroundTransparency = if entry ~= nil then transparency.Panel else transparency.PanelDim,
 		BorderSizePixel = 0,
 	}, {
 		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
+			CornerRadius = UITheme.Radii.Control,
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = if entry ~= nil then colors.Green else colors.Stroke,
-			Thickness = px(1),
-			Transparency = if entry ~= nil then 0.2 else 0.48,
+			Thickness = px(UITheme.Strokes.Thin),
+			Transparency = if entry ~= nil then transparency.StrokeSoft else transparency.Scrim,
 		}),
 		Icon = React.createElement("ImageLabel", {
 			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 0, px(4)),
-			Size = if compact then UDim2.fromOffset(px(17), px(17)) else UDim2.fromOffset(px(20), px(20)),
-			BackgroundTransparency = 1,
+			Position = UDim2.new(0.5, 0, 0, px(spacing.Sm)),
+			Size = if compact
+				then UDim2.fromOffset(px(sizes.IconTiny), px(sizes.IconTiny))
+				else UDim2.fromOffset(px(sizes.IconSmall), px(sizes.IconSmall)),
+			BackgroundTransparency = transparency.Clear,
 			Image = if definition ~= nil
 				then definition.Icon or ManpowerConfig.PlaceholderIcon
 				else ManpowerConfig.PlaceholderIcon,
 			ImageColor3 = if entry ~= nil then colors.Text else colors.Stroke,
-			ImageTransparency = if entry ~= nil then 0 else 0.55,
+			ImageTransparency = if entry ~= nil then transparency.Solid else transparency.Ghost,
 			ScaleType = Enum.ScaleType.Fit,
 		}),
-		Progress = React.createElement("Frame", {
+		Progress = React.createElement(ProgressBar, {
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -px(3)),
-			Size = UDim2.new(1, -px(8), 0, px(4)),
-			BackgroundColor3 = colors.Panel,
-			BorderSizePixel = 0,
-		}, {
-			Fill = React.createElement("Frame", {
-				Size = UDim2.fromScale(progress, 1),
-				BackgroundColor3 = if entry ~= nil and entry.Ready == true then colors.Green else colors.Amber,
-				BorderSizePixel = 0,
-			}),
+			Position = UDim2.new(0.5, 0, 1, -px(spacing.Xs)),
+			Size = UDim2.new(1, -px(spacing.XXl), 0, px(sizes.ProgressThin)),
+			progress = progress,
+			fillColor = if entry ~= nil and entry.Ready == true then colors.Green else colors.Amber,
 		}),
 	})
 end
@@ -223,7 +188,9 @@ local function productionButton(unitType: string, order: number, queueFull: bool
 	end
 
 	local canQueue = not queueFull
-	local label = if compact then `+ {string.sub(definition.DisplayName, 1, 8)}` else `+ {definition.DisplayName}`
+	local label = if compact
+		then `+ {string.sub(definition.DisplayName, 1, sizes.Progress)}`
+		else `+ {definition.DisplayName}`
 	return commandButton(label, order, colors.Amber, canQueue, function()
 		onQueueUnit(unitType)
 	end, compact)
@@ -247,7 +214,7 @@ local function buildingProduction(props)
 			HorizontalAlignment = Enum.HorizontalAlignment.Left,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, if compact then px(5) else px(6)),
+			Padding = UDim.new(0, if compact then px(spacing.Md) else px(spacing.Lg)),
 		}),
 	}
 
@@ -259,35 +226,33 @@ local function buildingProduction(props)
 		LayoutOrder = 5,
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Size = UDim2.fromScale(1, 0),
-		BackgroundTransparency = 1,
+		BackgroundTransparency = transparency.Clear,
 	}, {
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Left,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(7)),
+			Padding = UDim.new(0, px(spacing.Xl)),
 		}),
-		Header = React.createElement("TextLabel", {
+		Header = React.createElement(Text, {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, px(16)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Size = UDim2.new(1, 0, 0, px(textSizes.Value)),
+			variant = "Mono",
 			Text = `PRODUCCION {count}/{capacity}`,
-			TextColor3 = colors.MutedText,
-			TextSize = px(10),
+			TextSize = textSizes.Small,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 		Buttons = React.createElement("Frame", {
 			LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Left,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, if compact then px(5) else px(7)),
+				Padding = UDim.new(0, if compact then px(spacing.Md) else px(spacing.Xl)),
 			}),
 			Infantry = productionButton("InfanteriaLigera", 1, queueFull, props.onQueueUnit, compact),
 			Tank = productionButton("Tanque", 2, queueFull, props.onQueueUnit, compact),
@@ -295,7 +260,7 @@ local function buildingProduction(props)
 		Queue = React.createElement("Frame", {
 			LayoutOrder = 3,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, queueChildren),
 	})
 end
@@ -306,10 +271,13 @@ local function SelectionActionPanel(props)
 	end
 
 	local units = if type(props.units) == "table" then props.units else {}
-	local viewportSize = getViewportSize(props)
-	local compact = props.isMobile == true or viewportSize.X <= 720 or viewportSize.Y <= 520
+	local viewportSize = UIHelpers.getViewportSize(props)
+	local compact = UIHelpers.isCompact(props)
 	local panelWidth = if compact
-		then math.max(px(254), math.min(px(276), viewportSize.X - px(24)))
+		then math.max(
+			px(sizes.CompactPanelMinWidth),
+			math.min(px(sizes.CompactPanelWidth), viewportSize.X - px(spacing.Bottom + spacing.Xxs))
+		)
 		else px(panelConfig.Width)
 	local selectedBuilding = props.building
 	local hasUnits = #units > 0
@@ -327,55 +295,26 @@ local function SelectionActionPanel(props)
 	end
 
 	local children = {
-		Width = React.createElement("UISizeConstraint", {
-			MinSize = if compact then Vector2.new(px(254), 0) else Vector2.new(px(286), 0),
-			MaxSize = Vector2.new(
-				panelWidth,
-				if compact then math.max(px(240), viewportSize.Y - px(96)) else math.huge
-			),
-		}),
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = if props.areaModeArmed then colors.Amber else colors.Stroke,
-			Thickness = px(1),
-			Transparency = if props.areaModeArmed then 0.05 else 0.16,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(10)),
-			PaddingBottom = UDim.new(0, px(10)),
-			PaddingLeft = UDim.new(0, if compact then px(8) else px(10)),
-			PaddingRight = UDim.new(0, if compact then px(8) else px(10)),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Left,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, if compact then px(6) else px(8)),
-		}),
-		Title = React.createElement("TextLabel", {
+		Title = React.createElement(Text, {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, px(19)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
+			Size = UDim2.new(1, 0, 0, px(textSizes.HudTitle)),
+			variant = "Title",
 			Text = title,
-			TextColor3 = colors.Text,
-			TextSize = if compact then px(12) else px(14),
+			TextSize = if compact then textSizes.Button else textSizes.Body,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}),
 		Actions = React.createElement("Frame", {
 			LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Left,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, if compact then px(5) else px(7)),
+				Padding = UDim.new(0, if compact then px(spacing.Md) else px(spacing.Xl)),
 			}),
 			Area = commandButton(
 				if props.areaModeArmed then "AREA LISTA" else "AREA",
@@ -396,27 +335,25 @@ local function SelectionActionPanel(props)
 		local maxHp = if typeof(selectedBuilding.MaxHP) == "number" and selectedBuilding.MaxHP > 0
 			then selectedBuilding.MaxHP
 			else 1
-		children.Health = React.createElement("TextLabel", {
+		children.Health = React.createElement(Text, {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, px(16)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Size = UDim2.new(1, 0, 0, px(textSizes.Value)),
+			variant = "Mono",
 			Text = `HP {math.floor(hp)} / {math.floor(maxHp)}`,
-			TextColor3 = colors.MutedText,
-			TextSize = px(11),
+			TextSize = textSizes.ButtonSmall,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		})
 		children.BuildingActions = React.createElement("Frame", {
 			LayoutOrder = 4,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Left,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(7)),
+				Padding = UDim.new(0, px(spacing.Xl)),
 			}),
 			Move = commandButton(
 				"MOVER",
@@ -444,18 +381,39 @@ local function SelectionActionPanel(props)
 		})
 	end
 
-	return React.createElement("Frame", {
+	return React.createElement(Panel, {
 		AnchorPoint = if compact then Vector2.new(1, 0) else Vector2.new(1, 1),
 		Position = if compact
-			then UDim2.new(1, -px(12), 0, px(72))
+			then UDim2.new(1, -px(spacing.Wide), 0, px(sizes.ButtonLargeHeight + spacing.Bottom))
 			else UDim2.new(1, -px(panelConfig.RightOffset), 1, -px(panelConfig.BottomOffset)),
 		Size = if compact then UDim2.fromOffset(panelWidth, 0) else UDim2.fromScale(0.42, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = colors.Panel,
-		BackgroundTransparency = 0.05,
-		BorderSizePixel = 0,
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.PanelSoft,
+		strokeColor = if props.areaModeArmed then colors.Amber else colors.Stroke,
+		strokeTransparency = if props.areaModeArmed then transparency.Panel else transparency.StrokeSoft,
+		padding = {
+			Y = spacing.Panel,
+			X = if compact then spacing.XXl else spacing.Panel,
+		},
+		layout = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		VerticalAlignment = Enum.VerticalAlignment.Top,
+		gap = if compact then spacing.Lg else spacing.XXl,
 		Active = true,
-	}, children)
+		SizeConstraint = React.createElement("UISizeConstraint", {
+			MinSize = if compact
+				then Vector2.new(px(sizes.CompactPanelMinWidth), 0)
+				else Vector2.new(px(sizes.UnitSelectionPanelWidth + spacing.Sm), 0),
+			MaxSize = Vector2.new(
+				panelWidth,
+				if compact
+					then math.max(px(sizes.CompactPanelMinHeight), viewportSize.Y - px(sizes.ButtonMediumWidth))
+					else math.huge
+			),
+		}),
+		children = children,
+	})
 end
 
 return SelectionActionPanel

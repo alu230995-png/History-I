@@ -6,33 +6,29 @@ local React = require(Packages:WaitForChild("React"))
 
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local IconFrame = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("IconFrame"))
+local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
+local ProgressBar = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("ProgressBar"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
+local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
+local sizes = UITheme.Sizes
+local spacing = UITheme.Spacing
+local textSizes = UITheme.TextSizes
+local transparency = UITheme.Transparency
 
 local function actionButton(label: string, layoutOrder: number, accent: Color3, enabled: boolean, activated)
-	return React.createElement("TextButton", {
+	return React.createElement(TacticalButton, {
 		LayoutOrder = layoutOrder,
-		Size = UDim2.fromOffset(px(112), px(44)),
-		BackgroundColor3 = if enabled then colors.PanelRaised else Color3.fromRGB(38, 40, 40),
-		BorderSizePixel = 0,
-		AutoButtonColor = enabled,
-		Active = enabled,
-		Font = Enum.Font.GothamBold,
-		Text = label,
-		TextColor3 = if enabled then colors.Text else colors.MutedText,
-		TextSize = px(12),
-		TextWrapped = true,
-		[React.Event.Activated] = if enabled then activated else nil,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = px(1),
-			Transparency = if enabled then 0.12 else 0.5,
-		}),
+		width = sizes.ButtonLargeWidth + spacing.XXl,
+		height = sizes.ButtonHeight,
+		label = label,
+		accent = accent,
+		enabled = enabled,
+		TextSize = textSizes.Button,
+		onActivated = activated,
 	})
 end
 
@@ -55,9 +51,9 @@ local function unitCard(unitType: string, layoutOrder: number, queueFull: boolea
 
 	return React.createElement("TextButton", {
 		LayoutOrder = layoutOrder,
-		Size = UDim2.fromOffset(px(128), px(92)),
-		BackgroundColor3 = if canQueue then colors.PanelRaised else Color3.fromRGB(34, 36, 36),
-		BackgroundTransparency = if canQueue then 0.02 else 0.12,
+		Size = UDim2.fromOffset(px(sizes.UnitCardWidth), px(sizes.UnitCardHeight)),
+		BackgroundColor3 = if canQueue then colors.PanelRaised else colors.PanelPressed,
+		BackgroundTransparency = if canQueue then transparency.PanelLight else transparency.PanelMuted,
 		BorderSizePixel = 0,
 		AutoButtonColor = canQueue,
 		Active = canQueue,
@@ -65,51 +61,50 @@ local function unitCard(unitType: string, layoutOrder: number, queueFull: boolea
 		[React.Event.Activated] = if canQueue then activated else nil,
 	}, {
 		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
+			CornerRadius = UITheme.Radii.Control,
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = if canQueue then colors.Amber else colors.Stroke,
-			Thickness = px(1),
-			Transparency = if canQueue then 0.16 else 0.45,
+			Thickness = px(UITheme.Strokes.Thin),
+			Transparency = if canQueue then transparency.StrokeSoft else transparency.StrokeMuted,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(7)),
-			PaddingBottom = UDim.new(0, px(7)),
-			PaddingLeft = UDim.new(0, px(7)),
-			PaddingRight = UDim.new(0, px(7)),
+			PaddingTop = UDim.new(0, px(spacing.Xl)),
+			PaddingBottom = UDim.new(0, px(spacing.Xl)),
+			PaddingLeft = UDim.new(0, px(spacing.Xl)),
+			PaddingRight = UDim.new(0, px(spacing.Xl)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(4)),
+			Padding = UDim.new(0, px(spacing.Sm)),
 		}),
-		Icon = React.createElement("ImageLabel", {
+		Icon = React.createElement(IconFrame, {
 			LayoutOrder = 1,
-			Size = UDim2.fromOffset(px(30), px(30)),
-			BackgroundTransparency = 1,
-			Image = definition.Icon or ManpowerConfig.PlaceholderIcon,
-			ImageColor3 = textColor,
-			ScaleType = Enum.ScaleType.Fit,
+			Size = UDim2.fromOffset(px(sizes.IconButton), px(sizes.IconButton)),
+			backgroundTransparency = transparency.Clear,
+			stroke = false,
+			image = definition.Icon or ManpowerConfig.PlaceholderIcon,
+			imageColor = textColor,
+			iconSize = sizes.IconButton,
 		}),
-		Name = React.createElement("TextLabel", {
+		Name = React.createElement(Text, {
 			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, px(25)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
+			Size = UDim2.new(1, 0, 0, px(textSizes.Timer + spacing.Md)),
+			variant = "Button",
 			Text = definition.DisplayName,
 			TextColor3 = textColor,
-			TextSize = px(10),
+			TextSize = textSizes.Small,
 			TextWrapped = true,
 		}),
-		Cost = React.createElement("TextLabel", {
+		Cost = React.createElement(Text, {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, px(14)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Size = UDim2.new(1, 0, 0, px(textSizes.Body)),
+			variant = "Mono",
 			Text = `{definition.Gold or 0} ORO | {definition.TrainingTime or 0}S`,
 			TextColor3 = if canQueue then colors.Amber else colors.MutedText,
-			TextSize = px(10),
+			TextSize = textSizes.Small,
 		}),
 	})
 end
@@ -121,54 +116,48 @@ local function queueSlot(entry, layoutOrder: number)
 
 	return React.createElement("Frame", {
 		LayoutOrder = layoutOrder,
-		Size = UDim2.fromOffset(px(60), px(60)),
+		Size = UDim2.fromOffset(px(sizes.QueueSlot), px(sizes.QueueSlot)),
 		BackgroundColor3 = if entry ~= nil then colors.PanelRaised else colors.Panel,
-		BackgroundTransparency = if entry ~= nil then 0.02 else 0.18,
+		BackgroundTransparency = if entry ~= nil then transparency.PanelLight else transparency.PanelDim,
 		BorderSizePixel = 0,
 	}, {
 		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
+			CornerRadius = UITheme.Radii.Control,
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = if entry ~= nil then colors.Green else colors.Stroke,
-			Thickness = px(1),
-			Transparency = if entry ~= nil then 0.18 else 0.42,
+			Thickness = px(UITheme.Strokes.Thin),
+			Transparency = if entry ~= nil then transparency.StrokeSoft else transparency.StrokeMuted,
 		}),
-		Icon = React.createElement("ImageLabel", {
+		Icon = React.createElement(IconFrame, {
 			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 0, px(5)),
-			Size = UDim2.fromOffset(px(25), px(25)),
-			BackgroundTransparency = 1,
-			Image = if unitDefinition ~= nil
+			Position = UDim2.new(0.5, 0, 0, px(spacing.Md)),
+			Size = UDim2.fromOffset(px(sizes.IconMedium), px(sizes.IconMedium)),
+			backgroundTransparency = transparency.Clear,
+			stroke = false,
+			image = if unitDefinition ~= nil
 				then unitDefinition.Icon or ManpowerConfig.PlaceholderIcon
 				else ManpowerConfig.PlaceholderIcon,
-			ImageColor3 = if entry ~= nil then colors.Text else colors.Stroke,
-			ImageTransparency = if entry ~= nil then 0 else 0.5,
-			ScaleType = Enum.ScaleType.Fit,
+			imageColor = if entry ~= nil then colors.Text else colors.Stroke,
+			imageTransparency = if entry ~= nil then transparency.Solid else transparency.Disabled,
+			iconSize = sizes.IconMedium,
 		}),
-		Label = React.createElement("TextLabel", {
+		Label = React.createElement(Text, {
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -px(10)),
-			Size = UDim2.new(1, -px(6), 0, px(16)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Position = UDim2.new(0.5, 0, 1, -px(spacing.Panel)),
+			Size = UDim2.new(1, -px(spacing.Lg), 0, px(textSizes.Value)),
+			variant = "Mono",
 			Text = slotText,
 			TextColor3 = if entry ~= nil then colors.MutedText else colors.Stroke,
-			TextSize = px(8),
+			TextSize = textSizes.Tiny,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}),
-		ProgressBack = React.createElement("Frame", {
+		ProgressBack = React.createElement(ProgressBar, {
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -px(4)),
-			Size = UDim2.new(1, -px(8), 0, px(4)),
-			BackgroundColor3 = colors.Panel,
-			BorderSizePixel = 0,
-		}, {
-			Fill = React.createElement("Frame", {
-				Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1),
-				BackgroundColor3 = if entry ~= nil and entry.Ready == true then colors.Green else colors.Amber,
-				BorderSizePixel = 0,
-			}),
+			Position = UDim2.new(0.5, 0, 1, -px(spacing.Sm)),
+			Size = UDim2.new(1, -px(spacing.XXl), 0, px(sizes.ProgressThin)),
+			progress = math.clamp(progress, 0, 1),
+			fillColor = if entry ~= nil and entry.Ready == true then colors.Green else colors.Amber,
 		}),
 	})
 end
@@ -190,7 +179,7 @@ local function barracksPanel(props)
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(6)),
+			Padding = UDim.new(0, px(spacing.Lg)),
 		}),
 	}
 
@@ -201,33 +190,31 @@ local function barracksPanel(props)
 	return React.createElement("Frame", {
 		LayoutOrder = 4,
 		AutomaticSize = Enum.AutomaticSize.XY,
-		BackgroundTransparency = 1,
+		BackgroundTransparency = transparency.Clear,
 	}, {
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(7)),
+			Padding = UDim.new(0, px(spacing.Xl)),
 		}),
-		Header = React.createElement("TextLabel", {
+		Header = React.createElement(Text, {
 			LayoutOrder = 1,
-			Size = UDim2.fromOffset(px(272), px(18)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
+			Size = UDim2.fromOffset(px(sizes.PanelWidth), px(textSizes.Heading)),
+			variant = "Mono",
 			Text = `PRODUCCION {count} / {capacity}`,
-			TextColor3 = colors.MutedText,
-			TextSize = px(11),
+			TextSize = textSizes.ButtonSmall,
 		}),
 		Production = React.createElement("Frame", {
 			LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Center,
 				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(8)),
+				Padding = UDim.new(0, px(spacing.XXl)),
 			}),
 			Infanteria = unitCard("InfanteriaLigera", 1, queueFull, function()
 				props.onQueueUnit("InfanteriaLigera")
@@ -239,7 +226,7 @@ local function barracksPanel(props)
 		Queue = React.createElement("Frame", {
 			LayoutOrder = 3,
 			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = transparency.Clear,
 		}, queueChildren),
 	})
 end
@@ -256,76 +243,59 @@ local function BuildingMenu(props)
 	local healthText = `{math.floor(hp)} / {math.floor(maxHp)}`
 	local isBarracks = buildingType == "Cuartel"
 
-	return React.createElement("Frame", {
+	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -px(92)),
+		Position = UDim2.new(0.5, 0, 1, -px(sizes.ButtonMediumWidth - spacing.Sm)),
 		AutomaticSize = Enum.AutomaticSize.XY,
-		BackgroundColor3 = colors.Panel,
-		BackgroundTransparency = 0.04,
-		BorderSizePixel = 0,
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.Panel,
+		strokeColor = colors.Stroke,
+		strokeTransparency = transparency.StrokeStrong,
+		padding = {
+			Y = spacing.Panel,
+			X = spacing.Wide,
+		},
+		layout = Enum.FillDirection.Vertical,
+		gap = spacing.XXl,
 		Active = true,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = colors.Stroke,
-			Thickness = px(1),
-			Transparency = 0.05,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(10)),
-			PaddingBottom = UDim.new(0, px(10)),
-			PaddingLeft = UDim.new(0, px(12)),
-			PaddingRight = UDim.new(0, px(12)),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(8)),
-		}),
-		Title = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			Size = UDim2.fromOffset(px(272), px(22)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.GothamBold,
-			Text = string.upper(buildingType),
-			TextColor3 = colors.Text,
-			TextSize = px(15),
-			TextWrapped = true,
-		}),
-		Health = React.createElement("TextLabel", {
-			LayoutOrder = 2,
-			Size = UDim2.fromOffset(px(272), px(18)),
-			BackgroundTransparency = 1,
-			Font = Enum.Font.Code,
-			Text = `HP {healthText}`,
-			TextColor3 = colors.MutedText,
-			TextSize = px(13),
-		}),
-		Actions = React.createElement("Frame", {
-			LayoutOrder = 3,
-			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
-		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(8)),
+		children = {
+			Title = React.createElement(Text, {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(px(sizes.PanelWidth), px(spacing.Bottom)),
+				variant = "Title",
+				Text = string.upper(buildingType),
+				TextWrapped = true,
 			}),
-			Move = actionButton("MOVER", 1, colors.Amber, canEdit, props.onMove),
-			Destroy = actionButton("DESTRUIR", 2, colors.Red, canEdit, props.onDestroy),
-			Close = actionButton("CERRAR", 3, colors.Stroke, true, props.onClose),
-		}),
-		Barracks = barracksPanel({
-			isBarracks = isBarracks,
-			canEdit = canEdit,
-			queue = props.queue,
-			onQueueUnit = props.onQueueUnit,
-		}),
+			Health = React.createElement(Text, {
+				LayoutOrder = 2,
+				Size = UDim2.fromOffset(px(sizes.PanelWidth), px(textSizes.Heading)),
+				variant = "Mono",
+				Text = `HP {healthText}`,
+				TextSize = textSizes.Meta,
+			}),
+			Actions = React.createElement("Frame", {
+				LayoutOrder = 3,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundTransparency = transparency.Clear,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, px(spacing.XXl)),
+				}),
+				Move = actionButton("MOVER", 1, colors.Amber, canEdit, props.onMove),
+				Destroy = actionButton("DESTRUIR", 2, colors.Red, canEdit, props.onDestroy),
+				Close = actionButton("CERRAR", 3, colors.Stroke, true, props.onClose),
+			}),
+			Barracks = barracksPanel({
+				isBarracks = isBarracks,
+				canEdit = canEdit,
+				queue = props.queue,
+				onQueueUnit = props.onQueueUnit,
+			}),
+		},
 	})
 end
 

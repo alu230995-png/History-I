@@ -1,48 +1,33 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Packages = ReplicatedStorage:WaitForChild("Packages")
-local React = require(Packages:WaitForChild("React"))
+local React = require(ReplicatedStorage:WaitForChild("Packages"):WaitForChild("React"))
 
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
+local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
+local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
+local sizes = UITheme.Sizes
+local spacing = UITheme.Spacing
+local textSizes = UITheme.TextSizes
+local transparency = UITheme.Transparency
 
 local function button(label: string, layoutOrder: number, accent: Color3, enabled: boolean, activated)
-	local background = if enabled then colors.PanelRaised else Color3.fromRGB(38, 40, 40)
-	local textColor = if enabled then colors.Text else colors.MutedText
-
-	return React.createElement("TextButton", {
+	return React.createElement(TacticalButton, {
 		LayoutOrder = layoutOrder,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(px(128), px(48)),
-		BackgroundColor3 = background,
-		BorderSizePixel = 0,
-		AutoButtonColor = enabled,
-		Text = label,
-		TextColor3 = textColor,
-		TextSize = px(14),
-		TextWrapped = true,
-		Font = Enum.Font.GothamBold,
-		Active = enabled,
-		[React.Event.Activated] = if enabled then activated else nil,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(3)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = px(1),
-			Transparency = if enabled then 0 else 0.45,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingLeft = UDim.new(0, px(14)),
-			PaddingRight = UDim.new(0, px(14)),
-		}),
-		Width = React.createElement("UISizeConstraint", {
-			MinSize = Vector2.new(px(104), px(48)),
-			MaxSize = Vector2.new(px(170), px(56)),
-		}),
+		width = sizes.ButtonBuildWidth,
+		height = sizes.ButtonLargeHeight,
+		minWidth = sizes.ButtonBuildMinWidth,
+		maxWidth = sizes.ButtonBuildMaxWidth,
+		maxHeight = sizes.ButtonMaxHeight,
+		label = label,
+		accent = accent,
+		enabled = enabled,
+		TextSize = textSizes.Body,
+		onActivated = activated,
 	})
 end
 
@@ -57,66 +42,52 @@ local function BuildControls(props)
 	local title = props.buildingName or "BUILDING"
 	local socketName = props.socketName or "NO TARGET"
 
-	return React.createElement("Frame", {
+	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -px(22)),
+		Position = UDim2.new(0.5, 0, 1, -px(spacing.Bottom)),
 		AutomaticSize = Enum.AutomaticSize.XY,
-		BackgroundColor3 = colors.Panel,
-		BackgroundTransparency = 0.08,
-		BorderSizePixel = 0,
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.PanelSoft,
+		strokeColor = statusColor,
+		strokeTransparency = transparency.StrokeStrong,
+		padding = {
+			Y = spacing.XXl,
+			X = spacing.Panel,
+		},
+		layout = Enum.FillDirection.Vertical,
+		gap = spacing.Lg,
 		Active = true,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, px(4)),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = statusColor,
-			Thickness = px(1),
-			Transparency = 0.1,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(8)),
-			PaddingBottom = UDim.new(0, px(8)),
-			PaddingLeft = UDim.new(0, px(10)),
-			PaddingRight = UDim.new(0, px(10)),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(6)),
-		}),
-		Status = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			AutomaticSize = Enum.AutomaticSize.XY,
-			Size = UDim2.fromOffset(px(260), px(18)),
-			BackgroundTransparency = 1,
-			Text = `{title}  |  {socketName}`,
-			TextColor3 = colors.MutedText,
-			TextSize = px(12),
-			TextWrapped = true,
-			Font = Enum.Font.Code,
-		}, {
-			Width = React.createElement("UISizeConstraint", {
-				MaxSize = Vector2.new(px(430), px(36)),
+		children = {
+			Status = React.createElement(Text, {
+				LayoutOrder = 1,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				Size = UDim2.fromOffset(px(sizes.PanelWidth), px(textSizes.Heading)),
+				variant = "Mono",
+				Text = `{title}  |  {socketName}`,
+				TextSize = textSizes.Button,
+				TextWrapped = true,
+			}, {
+				Width = React.createElement("UISizeConstraint", {
+					MaxSize = Vector2.new(px(sizes.PanelMaxTextWidth), px(sizes.ButtonCompactHeight - spacing.Sm)),
+				}),
 			}),
-		}),
-		Buttons = React.createElement("Frame", {
-			LayoutOrder = 2,
-			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = 1,
-		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, px(8)),
+			Buttons = React.createElement("Frame", {
+				LayoutOrder = 2,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundTransparency = transparency.Clear,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, px(spacing.XXl)),
+				}),
+				Rotate = button("ROTAR", 1, colors.Amber, canRotate, props.onRotate),
+				Confirm = button("CONFIRMAR", 2, colors.Green, canConfirm, props.onConfirm),
+				Cancel = button("CANCELAR", 3, colors.Red, true, props.onCancel),
 			}),
-			Rotate = button("ROTAR", 1, colors.Amber, canRotate, props.onRotate),
-			Confirm = button("CONFIRMAR", 2, colors.Green, canConfirm, props.onConfirm),
-			Cancel = button("CANCELAR", 3, colors.Red, true, props.onCancel),
-		}),
+		},
 	})
 end
 

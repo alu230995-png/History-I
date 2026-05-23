@@ -207,6 +207,10 @@ end
 
 BuildingConfig.Nexo = table.freeze({
 	TagKeyword = "Nexo",
+	SelectableTags = table.freeze({
+		"Nexo",
+	}),
+	AllowKeywordTags = true,
 	SelectionDurationSeconds = 10,
 	AssignmentMessageSeconds = 3,
 	MinimumSelectionNexos = 2,
@@ -235,5 +239,24 @@ BuildingConfig.Nexo = table.freeze({
 		return `{displayName} mantiene una posicion clave para controlar el frente y sostener la linea de avance.`
 	end,
 })
+
+function BuildingConfig.IsNexoTag(tag: any): boolean
+	if typeof(tag) ~= "string" or tag == "" then
+		return false
+	end
+
+	for _, selectableTag in BuildingConfig.Nexo.SelectableTags do
+		if tag == selectableTag then
+			return true
+		end
+	end
+
+	local keyword = BuildingConfig.Nexo.TagKeyword
+	if BuildingConfig.Nexo.AllowKeywordTags == true and typeof(keyword) == "string" and keyword ~= "" then
+		return string.find(string.lower(tag), string.lower(keyword), 1, true) ~= nil
+	end
+
+	return false
+end
 
 return table.freeze(BuildingConfig)
