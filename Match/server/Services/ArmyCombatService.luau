@@ -219,6 +219,9 @@ function ArmyCombatService:_addUnit(unit)
 
 	local definition = unit.Definition
 	local combat = definition.Combat
+	if definition.NonCombat == true or type(combat) ~= "table" then
+		return
+	end
 	local weapon = if type(combat) == "table" then WeaponConfig.GetWeapon(combat.WeaponId) else nil
 	if weapon == nil then
 		warn(("[ArmyCombatService] Unit %s has no valid Combat.WeaponId"):format(unit.UnitType))

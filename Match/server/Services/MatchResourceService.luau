@@ -8,6 +8,7 @@ local Knit = require(Packages:WaitForChild("Knit"))
 local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
+local MatchClockConfig = require(Shared:WaitForChild("Constants"):WaitForChild("MatchClockConfig"))
 local MatchEconomyConfig = require(Shared:WaitForChild("Constants"):WaitForChild("MatchEconomyConfig"))
 
 type ResourceState = {
@@ -51,8 +52,11 @@ function MatchResourceService:KnitInit()
 	self._trove = Trove.new()
 	self._resources = {}
 	self._nexoPopulationActive = {}
+	self._incomeFractions = {}
+	self._incomeToken = 0
 	self._clockService = nil
 	self._nexoService = nil
+	self._buildService = nil
 	self.ResourcesChanged = Signal.new()
 	self._trove:Add(self.ResourcesChanged)
 end
@@ -60,6 +64,7 @@ end
 function MatchResourceService:KnitStart()
 	self._clockService = Knit.GetService("MatchClockService")
 	self._nexoService = Knit.GetService("NexoService")
+	self._buildService = Knit.GetService("BuildService")
 
 	self._trove:Add(Players.PlayerAdded:Connect(function(player: Player)
 		self:_initializePlayer(player)
@@ -67,10 +72,9 @@ function MatchResourceService:KnitStart()
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
 		self._resources[player] = nil
 		self._nexoPopulationActive[player] = nil
+		self._incomeFractions[player] = nil
 	end))
-	self._trove:Add(self._clockService:OnTick(function()
-		self:_awardNexoIncome()
-	end))
+	self:_startIncomeLoop()
 
 	for _, player in Players:GetPlayers() do
 		self:_initializePlayer(player)
@@ -123,6 +127,12 @@ function MatchResourceService:ApplyBuildingPlaced(
 	self:_broadcast(player)
 end
 
+function MatchResourceService:ApplyBuildingCompleted(player: Player, populationCapBonus: number)
+	local resources = self:_getResources(player)
+	resources.PopulationCap += populationCapBonus
+	self:_broadcast(player)
+end
+
 function MatchResourceService:ApplyBuildingRemoved(player: Player, populationCost: number, populationCapBonus: number)
 	local resources = self:_getResources(player)
 	resources.PopulationUsed = math.max(0, resources.PopulationUsed - populationCost)
@@ -161,18 +171,61 @@ function MatchResourceService:SetNexoActive(player: Player, isActive: boolean)
 	self:_broadcast(player)
 end
 
-function MatchResourceService:_awardNexoIncome()
-	if self._nexoService == nil then
+function MatchResourceService:RefreshIncome(player: Player)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then
 		return
 	end
 
+	self:_broadcast(player)
+end
+
+function MatchResourceService:_startIncomeLoop()
+	self._incomeToken += 1
+	local token = self._incomeToken
+	task.spawn(function()
+		while not self._destroyed and self._incomeToken == token do
+			task.wait(MatchEconomyConfig.IncomeTickSeconds)
+			if self._destroyed or self._incomeToken ~= token then
+				return
+			end
+
+			self:_awardIncomeTick(MatchEconomyConfig.IncomeTickSeconds)
+		end
+	end)
+end
+
+function MatchResourceService:_awardIncomeTick(deltaSeconds: number)
+	local weekSeconds = math.max((MatchClockConfig.TickSeconds or 1) * (MatchEconomyConfig.DaysPerWeek or 7), 0.001)
+
 	for _, player in Players:GetPlayers() do
-		if self._nexoService:HasActiveNexo(player) then
+		local weeklyGold = self:_getWeeklyGold(player)
+		if weeklyGold <= 0 then
+			continue
+		end
+
+		local exactGain = (weeklyGold / weekSeconds) * deltaSeconds + (self._incomeFractions[player] or 0)
+		local wholeGain = math.floor(exactGain)
+		self._incomeFractions[player] = exactGain - wholeGain
+
+		if wholeGain > 0 then
 			local resources = self:_getResources(player)
-			resources.Gold += MatchEconomyConfig.NexoGoldPerTick
+			resources.Gold += wholeGain
 			self:_broadcast(player)
 		end
 	end
+end
+
+function MatchResourceService:_getWeeklyGold(player: Player): number
+	local total = 0
+	if self._nexoService ~= nil and self._nexoService:HasActiveNexo(player) then
+		total += MatchEconomyConfig.NexoGoldPerWeek
+	end
+
+	if self._buildService ~= nil then
+		total += self._buildService:GetWeeklyIncomeBonus(player)
+	end
+
+	return total
 end
 
 function MatchResourceService:_initializePlayer(player: Player)
@@ -181,6 +234,7 @@ function MatchResourceService:_initializePlayer(player: Player)
 	end
 
 	self._resources[player] = createResourceState()
+	self._incomeFractions[player] = 0
 	self:_broadcast(player)
 end
 
@@ -204,9 +258,11 @@ function MatchResourceService:Destroy()
 	end
 
 	self._destroyed = true
+	self._incomeToken += 1
 	self._trove:Destroy()
 	table.clear(self._resources)
 	table.clear(self._nexoPopulationActive)
+	table.clear(self._incomeFractions)
 end
 
 return MatchResourceService

@@ -727,6 +727,7 @@ function SelectionController:_openNexoBuildMenu()
 	end
 
 	self:_refreshResources()
+	self:_refreshNexoProductionQueue()
 	self._machine:TransitionTo(InteractionStates.NexoBuildMenuOpen)
 	self:_applyAssignedNexoHighlight()
 	self:_renderUi()
@@ -797,7 +798,7 @@ function SelectionController:_handleBuildingSelectionPointer(building: Model)
 	self._selectionStore:SelectBuilding(building)
 	self._machine:TransitionTo(InteractionStates.BuildingSelected)
 	self:_syncSelectionVisuals()
-	self:_refreshSelectedBarracksQueue()
+	self:_refreshSelectedProductionQueue()
 	self:_renderUi()
 end
 
@@ -858,7 +859,7 @@ function SelectionController:_moveActiveBuilding()
 	end
 end
 
-function SelectionController:_refreshSelectedBarracksQueue()
+function SelectionController:_refreshSelectedProductionQueue()
 	if not canInteractWithBuildings(self._playerState) then
 		return
 	end
@@ -867,10 +868,11 @@ function SelectionController:_refreshSelectedBarracksQueue()
 	if building == nil or self._manpowerService == nil then
 		return
 	end
-	if
-		building:GetAttribute("BuildingType") ~= "Cuartel"
-		or building:GetAttribute("OwnerUserId") ~= LOCAL_PLAYER.UserId
-	then
+	if building:GetAttribute("OwnerUserId") ~= LOCAL_PLAYER.UserId then
+		return
+	end
+	local buildingType = building:GetAttribute("BuildingType")
+	if #BuildingConfig.GetProductionUnits(buildingType) <= 0 then
 		return
 	end
 
@@ -881,7 +883,31 @@ function SelectionController:_refreshSelectedBarracksQueue()
 
 	local token = self:_nextAsyncToken()
 	task.spawn(function()
-		local result = self._manpowerService:GetBarracksQueue(buildingId)
+		local result = self._manpowerService:GetProductionQueue({
+			sourceKind = "Building",
+			sourceId = buildingId,
+			buildingId = buildingId,
+		})
+		if self._destroyed or token ~= self._asyncToken then
+			return
+		end
+		if result ~= nil and result.ok == true and result.queue ~= nil then
+			self:_setQueueSnapshot(result.queue)
+		end
+	end)
+end
+
+function SelectionController:_refreshNexoProductionQueue()
+	if self._manpowerService == nil or self._assignedNexoId == nil then
+		return
+	end
+
+	local token = self:_nextAsyncToken()
+	task.spawn(function()
+		local result = self._manpowerService:GetProductionQueue({
+			sourceKind = "Nexo",
+			sourceId = `Nexo:{self._assignedNexoId}`,
+		})
 		if self._destroyed or token ~= self._asyncToken then
 			return
 		end
@@ -897,18 +923,35 @@ function SelectionController:_queueSelectedUnit(unitType: string)
 	end
 
 	local building = self._selectionStore:GetSelectedBuilding()
-	if building == nil or self._manpowerService == nil then
+	if self._manpowerService == nil then
 		return
 	end
 
-	local buildingId = building:GetAttribute("BuildingId")
-	if typeof(buildingId) ~= "string" then
+	local request = nil
+	if building ~= nil then
+		local buildingId = building:GetAttribute("BuildingId")
+		if typeof(buildingId) ~= "string" then
+			return
+		end
+		request = {
+			sourceKind = "Building",
+			sourceId = buildingId,
+			buildingId = buildingId,
+			unitType = unitType,
+		}
+	elseif self:_canOpenNexoBuildMenu() and self._assignedNexoId ~= nil then
+		request = {
+			sourceKind = "Nexo",
+			sourceId = `Nexo:{self._assignedNexoId}`,
+			unitType = unitType,
+		}
+	else
 		return
 	end
 
 	local token = self:_nextAsyncToken()
 	task.spawn(function()
-		local result = self._manpowerService:RequestQueueUnit({ buildingId = buildingId, unitType = unitType })
+		local result = self._manpowerService:RequestQueueUnit(request)
 		if self._destroyed or token ~= self._asyncToken then
 			return
 		end
@@ -1288,7 +1331,11 @@ function SelectionController:_renderUi()
 	local units = self:_getSelectedUnitsForPanel()
 	local building = self:_getSelectedBuildingForPanel()
 	local buildingId = if building ~= nil then building.BuildingId else nil
-	local queue = if typeof(buildingId) == "string" then self:_getQueueForDisplay(buildingId) else nil
+	local nexoQueueId = if self._assignedNexoId ~= nil then `Nexo:{self._assignedNexoId}` else nil
+	local queue = if typeof(buildingId) == "string"
+		then self:_getQueueForDisplay(buildingId)
+		elseif typeof(nexoQueueId) == "string" then self:_getQueueForDisplay(nexoQueueId)
+		else nil
 	local canShowActionPanel = self._snapshot.phaseActive ~= true
 		and not self._isBuildingMode
 		and canInteractWithBuildings(self._playerState)

@@ -10,129 +10,247 @@ BuildingConfig.PlacementModes = table.freeze({
 	Center = "Center",
 	Edge = "Edge",
 })
+BuildingConfig.Categories = table.freeze({
+	Production = "Production",
+	Military = "Military",
+	Defense = "Defense",
+})
+BuildingConfig.HexTags = table.freeze({
+	General = "GeneralBuildingHex",
+	Special = "SpecialBuildingHex",
+})
+BuildingConfig.ConstructionStates = table.freeze({
+	Pending = "Pending",
+	Building = "Building",
+	Complete = "Complete",
+})
 BuildingConfig.HealthBillboardName = "BuildingHealthBillboard"
+BuildingConfig.ConstructionBillboardName = "ConstructionBillboard"
 BuildingConfig.MenuOrder = table.freeze({
 	"Casa",
 	"Aserradero",
 	"Cuartel",
-	"Artilleria",
+	"Fabrica",
 	"Pared",
 })
 
 BuildingConfig.Shadow = table.freeze({
 	ValidColor = Color3.fromRGB(63, 176, 92),
 	InvalidColor = Color3.fromRGB(188, 61, 58),
+	ConstructionColor = Color3.fromRGB(64, 150, 255),
 	Transparency = 0.45,
+	ConstructionTransparency = 0.35,
 	VerticalOffset = 0.08,
+})
+
+local CENTER_SOCKET = table.freeze({
+	Center = true,
+})
+
+local EDGE_SOCKETS = table.freeze({
+	Edge1 = true,
+	Edge2 = true,
+	Edge3 = true,
+	Edge4 = true,
+	Edge5 = true,
+	Edge6 = true,
 })
 
 BuildingConfig.Buildings = table.freeze({
 	Casa = table.freeze({
 		Path = "ReplicatedStorage/Assets/Buildings/Casa",
 		DisplayName = "CASA",
+		Category = BuildingConfig.Categories.Defense,
+		Enabled = true,
+		RequiresBuilder = true,
 		PlacementMode = "Center",
-		Gold = 50,
+		Gold = 65,
 		Limit = 4,
 		Population = 0,
 		PopulationCapBonus = 4,
 		HP = 150,
 		Interactable = false,
-		BuildTime = 8,
-		AllowedSockets = table.freeze({
-			Center = true,
-		}),
+		BuildTime = 10,
+		AllowedSockets = CENTER_SOCKET,
 		RotationLocked = false,
 		Footprint = Vector3.new(5, 5, 5),
 		PivotOffset = Vector3.new(0, 2.5, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
 	}),
 
 	Aserradero = table.freeze({
 		Path = "ReplicatedStorage/Assets/Buildings/Aserradero",
+		ModelFallbackPath = "ReplicatedStorage/Assets/Buildings/Casa",
 		DisplayName = "ASERRADERO",
+		Category = BuildingConfig.Categories.Production,
+		Enabled = true,
+		RequiresBuilder = true,
 		PlacementMode = "Center",
-		Gold = 75,
+		Gold = 100,
 		Limit = 2,
-		Population = 2,
+		Population = 3,
 		PopulationCapBonus = 0,
 		HP = 100,
 		Interactable = false,
-		BuildTime = 10,
-		AllowedSockets = table.freeze({
-			Center = true,
-		}),
+		BuildTime = 13,
+		AllowedSockets = CENTER_SOCKET,
 		RotationLocked = false,
 		Footprint = Vector3.new(5, 5, 5),
 		PivotOffset = Vector3.new(0, 2.5, 0),
-		RequiredHexTag = "LumberHex",
+		RequiredHexTag = BuildingConfig.HexTags.Special,
+		Income = table.freeze({
+			WeeklyGold = 40,
+		}),
 	}),
 
 	Cuartel = table.freeze({
 		Path = "ReplicatedStorage/Assets/Buildings/Cuartel",
 		DisplayName = "CUARTEL",
+		Category = BuildingConfig.Categories.Military,
+		Enabled = true,
+		RequiresBuilder = true,
 		PlacementMode = "Center",
-		Gold = 120,
+		Gold = 160,
 		Limit = 2,
-		Population = 3,
+		Population = 4,
 		PopulationCapBonus = 0,
 		HP = 200,
 		Interactable = false,
-		BuildTime = 15,
-		AllowedSockets = table.freeze({
-			Center = true,
-		}),
+		BuildTime = 20,
+		AllowedSockets = CENTER_SOCKET,
 		RotationLocked = false,
 		Footprint = Vector3.new(6, 6, 6),
 		PivotOffset = Vector3.new(0, 3, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
+		Production = table.freeze({
+			Units = table.freeze({
+				"InfanteriaLigera",
+				"Constructor",
+			}),
+		}),
+	}),
+
+	Fabrica = table.freeze({
+		Path = "ReplicatedStorage/Assets/Buildings/Fabrica",
+		ModelFallbackPath = "ReplicatedStorage/Assets/Buildings/Cuartel",
+		DisplayName = "FABRICA",
+		Category = BuildingConfig.Categories.Military,
+		Enabled = true,
+		RequiresBuilder = true,
+		PlacementMode = "Center",
+		Gold = 235,
+		Limit = 2,
+		Population = 5,
+		PopulationCapBonus = 0,
+		HP = 240,
+		Interactable = false,
+		BuildTime = 24,
+		AllowedSockets = CENTER_SOCKET,
+		RotationLocked = false,
+		Footprint = Vector3.new(7, 6, 7),
+		PivotOffset = Vector3.new(0, 3, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
+		Production = table.freeze({
+			Units = table.freeze({
+				"Tanque",
+			}),
+		}),
 	}),
 
 	Artilleria = table.freeze({
 		Path = "ReplicatedStorage/Assets/Buildings/Artilleria",
 		DisplayName = "ARTILLERIA",
+		Category = BuildingConfig.Categories.Defense,
+		Enabled = false,
+		RequiresBuilder = true,
 		PlacementMode = "Edge",
-		Gold = 200,
+		Gold = 260,
 		Limit = 4,
-		Population = 5,
+		Population = 6,
 		PopulationCapBonus = 0,
 		HP = 80,
 		Interactable = false,
-		BuildTime = 20,
-		AllowedSockets = table.freeze({
-			Edge1 = true,
-			Edge2 = true,
-			Edge3 = true,
-			Edge4 = true,
-			Edge5 = true,
-			Edge6 = true,
-		}),
+		BuildTime = 26,
+		AllowedSockets = EDGE_SOCKETS,
 		RotationLocked = false,
 		ModelYawOffset = 0,
 		Footprint = Vector3.new(4, 4, 4),
 		PivotOffset = Vector3.new(0, 2, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
 	}),
 
 	Pared = table.freeze({
 		Path = "ReplicatedStorage/Assets/Buildings/Pared",
 		DisplayName = "PARED",
+		Category = BuildingConfig.Categories.Defense,
+		Enabled = true,
+		RequiresBuilder = true,
 		PlacementMode = "Edge",
-		Gold = 25,
+		Gold = 35,
 		Limit = 12,
 		Population = 0,
 		PopulationCapBonus = 0,
 		HP = 180,
 		Interactable = false,
-		BuildTime = 4,
-		AllowedSockets = table.freeze({
-			Edge1 = true,
-			Edge2 = true,
-			Edge3 = true,
-			Edge4 = true,
-			Edge5 = true,
-			Edge6 = true,
-		}),
+		BuildTime = 5,
+		AllowedSockets = EDGE_SOCKETS,
 		RotationLocked = false,
 		ModelYawOffset = 0,
 		Footprint = Vector3.new(5, 4, 1),
 		PivotOffset = Vector3.new(0, 2, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
+		BlocksLineOfSight = true,
+		BlocksEdgeMovement = true,
+	}),
+
+	Torreta = table.freeze({
+		Path = "ReplicatedStorage/Assets/Buildings/Torreta",
+		ModelFallbackPath = "ReplicatedStorage/Assets/Buildings/Artilleria",
+		DisplayName = "TORRETA",
+		Category = BuildingConfig.Categories.Defense,
+		Enabled = false,
+		RequiresBuilder = true,
+		PlacementMode = "Center",
+		Gold = 260,
+		Limit = 4,
+		Population = 3,
+		PopulationCapBonus = 0,
+		HP = 140,
+		Interactable = false,
+		BuildTime = 24,
+		AllowedSockets = CENTER_SOCKET,
+		RotationLocked = false,
+		Footprint = Vector3.new(4, 5, 4),
+		PivotOffset = Vector3.new(0, 2.5, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
+	}),
+
+	Minas = table.freeze({
+		Path = "ReplicatedStorage/Assets/Buildings/Minas",
+		ModelFallbackPath = "ReplicatedStorage/Assets/Buildings/Pared",
+		DisplayName = "MINAS",
+		Category = BuildingConfig.Categories.Defense,
+		Enabled = false,
+		RequiresBuilder = true,
+		PlacementMode = "Center",
+		Gold = 80,
+		Limit = 8,
+		Population = 0,
+		PopulationCapBonus = 0,
+		HP = 40,
+		Interactable = false,
+		BuildTime = 8,
+		AllowedSockets = CENTER_SOCKET,
+		RotationLocked = false,
+		Footprint = Vector3.new(3, 1, 3),
+		PivotOffset = Vector3.new(0, 0.5, 0),
+		RequiredHexTag = BuildingConfig.HexTags.General,
+	}),
+})
+
+BuildingConfig.NexoProduction = table.freeze({
+	Units = table.freeze({
+		"Constructor",
 	}),
 })
 
@@ -140,8 +258,11 @@ BuildingConfig.Aliases = table.freeze({
 	House = "Casa",
 	Sawmill = "Aserradero",
 	Barracks = "Cuartel",
+	Factory = "Fabrica",
 	Artillery = "Artilleria",
 	Wall = "Pared",
+	Turret = "Torreta",
+	Mines = "Minas",
 })
 
 function BuildingConfig.NormalizeBuildingType(buildingType: any): string?
@@ -163,6 +284,11 @@ function BuildingConfig.GetBuilding(buildingType: any): any?
 	end
 
 	return BuildingConfig.Buildings[normalized]
+end
+
+function BuildingConfig.IsEnabled(buildingType: any): boolean
+	local definition = BuildingConfig.GetBuilding(buildingType)
+	return definition ~= nil and definition.Enabled == true
 end
 
 function BuildingConfig.GetPlacementMode(buildingType: any): string?
@@ -203,6 +329,41 @@ end
 function BuildingConfig.CanRotate(buildingType: any): boolean
 	local definition = BuildingConfig.GetBuilding(buildingType)
 	return definition ~= nil and definition.RotationLocked ~= true
+end
+
+function BuildingConfig.GetProductionUnits(buildingType: any): { string }
+	local definition = BuildingConfig.GetBuilding(buildingType)
+	local production = if definition ~= nil then definition.Production else nil
+	local units = if type(production) == "table" then production.Units else nil
+	return if type(units) == "table" then units else {}
+end
+
+function BuildingConfig.CanProduceUnit(buildingType: any, unitType: any): boolean
+	if typeof(unitType) ~= "string" or unitType == "" then
+		return false
+	end
+
+	for _, configuredUnitType in BuildingConfig.GetProductionUnits(buildingType) do
+		if configuredUnitType == unitType then
+			return true
+		end
+	end
+
+	return false
+end
+
+function BuildingConfig.CanNexoProduceUnit(unitType: any): boolean
+	if typeof(unitType) ~= "string" or unitType == "" then
+		return false
+	end
+
+	for _, configuredUnitType in BuildingConfig.NexoProduction.Units do
+		if configuredUnitType == unitType then
+			return true
+		end
+	end
+
+	return false
 end
 
 BuildingConfig.Nexo = table.freeze({

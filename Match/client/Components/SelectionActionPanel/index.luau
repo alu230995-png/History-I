@@ -197,7 +197,8 @@ local function productionButton(unitType: string, order: number, queueFull: bool
 end
 
 local function buildingProduction(props)
-	if not props.isBarracks or not props.canEdit then
+	local productionUnits = props.productionUnits
+	if type(productionUnits) ~= "table" or #productionUnits <= 0 or not props.canEdit then
 		return nil
 	end
 
@@ -238,25 +239,29 @@ local function buildingProduction(props)
 			LayoutOrder = 1,
 			Size = UDim2.new(1, 0, 0, px(textSizes.Value)),
 			variant = "Mono",
-			Text = `PRODUCCION {count}/{capacity}`,
+			Text = `{props.title or "PRODUCCION"} {count}/{capacity}`,
 			TextSize = textSizes.Small,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
-		Buttons = React.createElement("Frame", {
-			LayoutOrder = 2,
-			AutomaticSize = Enum.AutomaticSize.XY,
-			BackgroundTransparency = transparency.Clear,
-		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Left,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, if compact then px(spacing.Md) else px(spacing.Xl)),
-			}),
-			Infantry = productionButton("InfanteriaLigera", 1, queueFull, props.onQueueUnit, compact),
-			Tank = productionButton("Tanque", 2, queueFull, props.onQueueUnit, compact),
-		}),
+		Buttons = (function()
+			local children = {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Left,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, if compact then px(spacing.Md) else px(spacing.Xl)),
+				}),
+			}
+			for index, unitType in productionUnits do
+				children[unitType] = productionButton(unitType, index, queueFull, props.onQueueUnit, compact)
+			end
+			return React.createElement("Frame", {
+				LayoutOrder = 2,
+				AutomaticSize = Enum.AutomaticSize.XY,
+				BackgroundTransparency = transparency.Clear,
+			}, children)
+		end)(),
 		Queue = React.createElement("Frame", {
 			LayoutOrder = 3,
 			AutomaticSize = Enum.AutomaticSize.XY,
@@ -285,6 +290,7 @@ local function SelectionActionPanel(props)
 	local hasNexoAction = props.canOpenNexoBuild == true
 	local buildingType = if hasBuilding then selectedBuilding.BuildingType or "BUILDING" else nil
 	local definition = if buildingType ~= nil then BuildingConfig.GetBuilding(buildingType) else nil
+	local productionUnits = if definition ~= nil then BuildingConfig.GetProductionUnits(buildingType) else nil
 	local title = "COMANDO"
 	if hasBuilding then
 		title = string.upper(if definition ~= nil then definition.DisplayName else buildingType)
@@ -373,10 +379,20 @@ local function SelectionActionPanel(props)
 			),
 		})
 		children.Production = buildingProduction({
-			isBarracks = buildingType == "Cuartel",
 			canEdit = selectedBuilding.CanEdit == true,
 			queue = props.queue,
 			compact = compact,
+			title = "PRODUCCION",
+			productionUnits = productionUnits,
+			onQueueUnit = props.onQueueUnit,
+		})
+	elseif hasNexoAction then
+		children.Production = buildingProduction({
+			canEdit = true,
+			queue = props.queue,
+			compact = compact,
+			title = "NEXO",
+			productionUnits = BuildingConfig.NexoProduction.Units,
 			onQueueUnit = props.onQueueUnit,
 		})
 	end

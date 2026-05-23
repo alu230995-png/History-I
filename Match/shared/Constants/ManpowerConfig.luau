@@ -146,6 +146,26 @@ ManpowerConfig.Units = table.freeze({
 		}),
 	}),
 
+	Constructor = table.freeze({
+		DisplayName = "CONSTRUCTOR",
+		Path = "ReplicatedStorage/Assets/Manpower/Constructor",
+		ModelFallbackPath = "ReplicatedStorage/Assets/Manpower/InfanteriaLigera",
+		Icon = ManpowerConfig.PlaceholderIcon,
+		Gold = 25,
+		Population = 1,
+		TrainingTime = 6,
+		HP = 80,
+		HitRadius = 2,
+		NonCombat = true,
+		Builder = true,
+		Movement = table.freeze({
+			Speed = 11,
+			Profile = "Terrestrial",
+		}),
+		MovementMode = ManpowerConfig.MovementModes.Humanoid,
+		RootPartName = "HumanoidRootPart",
+	}),
+
 	Tanque = table.freeze({
 		DisplayName = "TANQUE",
 		Path = "ReplicatedStorage/Assets/Manpower/Tanque",
@@ -185,6 +205,7 @@ ManpowerConfig.Units = table.freeze({
 
 ManpowerConfig.MenuOrder = table.freeze({
 	"InfanteriaLigera",
+	"Constructor",
 	"Tanque",
 })
 

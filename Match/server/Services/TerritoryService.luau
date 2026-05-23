@@ -300,6 +300,9 @@ function TerritoryService:_stepHexCapture(hexKey: string, deltaSeconds: number)
 		local ownerUserId = unit.Owner.UserId
 		if self._diplomacyService:AreHostile(ownerUserId, record.OwnerUserId) then
 			local seconds, rate = getCaptureSettings(unit)
+			if rate <= 0 or unit.Definition.NonCombat == true then
+				continue
+			end
 			local attacker = attackersByUserId[ownerUserId]
 			if attacker == nil then
 				attacker = {

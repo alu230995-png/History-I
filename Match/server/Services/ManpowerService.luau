@@ -13,6 +13,7 @@ local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local ArmyPhaseConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ArmyPhaseConfig"))
+local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("BuildingConfig"))
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
@@ -31,6 +32,8 @@ type QueueEntry = {
 
 type BarracksQueue = {
 	BuildingId: string,
+	SourceKind: string,
+	SourceId: string,
 	Owner: Player,
 	Entries: { QueueEntry },
 }
@@ -110,6 +113,8 @@ local REQUEST_NAMES = table.freeze({
 	Queue = "Queue",
 	Move = "Move",
 })
+local SOURCE_KIND_BUILDING = "Building"
+local SOURCE_KIND_NEXO = "Nexo"
 
 local function isFiniteNumber(value: any): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
@@ -198,6 +203,9 @@ end
 
 local function getUnitSource(unitType: string, definition): Model?
 	local source = resolvePath(definition.Path)
+	if source == nil and definition.ModelFallbackPath ~= nil then
+		source = resolvePath(definition.ModelFallbackPath)
+	end
 	if source == nil then
 		warn(("[ManpowerService] Missing unit path for %s: %s"):format(unitType, tostring(definition.Path)))
 		return nil
@@ -258,6 +266,10 @@ function ManpowerService.Client:GetBarracksQueue(player: Player, buildingId: any
 	return self.Server:GetBarracksQueue(player, buildingId)
 end
 
+function ManpowerService.Client:GetProductionQueue(player: Player, request: any): any
+	return self.Server:GetProductionQueue(player, request)
+end
+
 function ManpowerService.Client:GetUnitsSnapshot(_player: Player): any
 	return self.Server:GetUnitsSnapshot()
 end
@@ -293,6 +305,7 @@ function ManpowerService:KnitInit()
 	self._buildService = nil
 	self._gameService = nil
 	self._resourceService = nil
+	self._nexoService = nil
 	self.UnitSpawned = Signal.new()
 	self.UnitDestroyed = Signal.new()
 	self.UnitEnteredHex = Signal.new()
@@ -307,6 +320,7 @@ function ManpowerService:KnitStart()
 	self._buildService = Knit.GetService("BuildService")
 	self._gameService = Knit.GetService("GameService")
 	self._resourceService = Knit.GetService("MatchResourceService")
+	self._nexoService = Knit.GetService("NexoService")
 	self:RebuildHexCache()
 
 	self._trove:Add(CollectionService:GetInstanceAddedSignal(GridConfig.BuildableHexTag):Connect(function(instance)
@@ -346,18 +360,28 @@ function ManpowerService:RebuildHexCache()
 end
 
 function ManpowerService:GetBarracksQueue(player: Player, buildingId: any): any
-	local record, reason = self:_getOwnedBarracks(player, buildingId)
-	if record == nil then
+	return self:GetProductionQueue(player, {
+		sourceKind = SOURCE_KIND_BUILDING,
+		sourceId = buildingId,
+		buildingId = buildingId,
+	})
+end
+
+function ManpowerService:GetProductionQueue(player: Player, request: any): any
+	local source, reason = self:_getOwnedProductionSource(player, request)
+	if source == nil then
 		return {
 			ok = false,
 			reason = reason,
 		}
 	end
 
-	local queue = self._queues[record.BuildingId]
+	local queue = self._queues[source.SourceId]
 	return {
 		ok = true,
-		queue = if queue ~= nil then self:_snapshotQueue(queue) else self:_emptyQueueSnapshot(record.BuildingId),
+		queue = if queue ~= nil
+			then self:_snapshotQueue(queue)
+			else self:_emptyQueueSnapshot(source.SourceId, source.SourceKind),
 	}
 end
 
@@ -433,6 +457,46 @@ function ManpowerService:GetUnitCombatPosition(target: any, now: number?): Vecto
 	return unit:GetCombatPosition(self._gridByKey, now)
 end
 
+function ManpowerService:GetAvailableBuilderOnHex(player: Player, hexPart: BasePart): any?
+	local hexRecord = self:_getHexRecord(hexPart)
+	if hexRecord == nil then
+		return nil
+	end
+
+	local ownerUnits = self._unitsByOwner[player]
+	if ownerUnits == nil then
+		return nil
+	end
+
+	for _, unit in ownerUnits do
+		if self:_isIdleBuilder(unit) and unit.CurrentHexKey == hexRecord.Key then
+			return unit
+		end
+	end
+
+	return nil
+end
+
+function ManpowerService:AssignNearestBuilderToHex(player: Player, hexPart: BasePart): { ok: boolean, reason: string? }
+	local targetHex = self:_getHexRecord(hexPart)
+	if targetHex == nil then
+		return { ok = false, reason = "InvalidHex" }
+	end
+
+	local builder = self:_findNearestIdleBuilder(player, targetHex)
+	if builder == nil then
+		return { ok = false, reason = "MissingBuilder" }
+	end
+
+	if builder.CurrentHexKey == targetHex.Key then
+		return { ok = true }
+	end
+
+	self:_cancelMoveOrder(builder, true)
+	local commanded = self:_assignMoveTargets({ builder }, targetHex)
+	return if commanded > 0 then { ok = true } else { ok = false, reason = "NoPath" }
+end
+
 function ManpowerService:RequestQueueUnit(player: Player, request: any): any
 	if self:_isRateLimited(player, REQUEST_NAMES.Queue) then
 		return { ok = false, reason = "RateLimited" }
@@ -446,17 +510,20 @@ function ManpowerService:RequestQueueUnit(player: Player, request: any): any
 		return { ok = false, reason = "NotPlaying" }
 	end
 
-	local record, barracksReason = self:_getOwnedBarracks(player, request.buildingId)
-	if record == nil then
-		return { ok = false, reason = barracksReason }
+	local source, sourceReason = self:_getOwnedProductionSource(player, request)
+	if source == nil then
+		return { ok = false, reason = sourceReason }
 	end
 
 	local definition = ManpowerConfig.GetUnit(request.unitType)
 	if definition == nil then
 		return { ok = false, reason = "InvalidUnit" }
 	end
+	if not self:_canSourceProduceUnit(source, request.unitType) then
+		return { ok = false, reason = "UnitNotProducedHere" }
+	end
 
-	local queue = self:_ensureQueue(record)
+	local queue = self:_ensureQueue(source)
 	if #queue.Entries >= ManpowerConfig.QueueCapacity then
 		return { ok = false, reason = "QueueFull", queue = self:_snapshotQueue(queue) }
 	end
@@ -566,9 +633,11 @@ function ManpowerService:DamageUnit(target: any, damage: any): { ok: boolean, re
 	}
 end
 
-function ManpowerService:_emptyQueueSnapshot(buildingId: string): any
+function ManpowerService:_emptyQueueSnapshot(buildingId: string, sourceKind: string?): any
 	return {
 		BuildingId = buildingId,
+		SourceId = buildingId,
+		SourceKind = sourceKind or SOURCE_KIND_BUILDING,
 		Capacity = ManpowerConfig.QueueCapacity,
 		Count = 0,
 		Entries = {},
@@ -594,6 +663,8 @@ function ManpowerService:_snapshotQueue(queue: BarracksQueue): any
 
 	return {
 		BuildingId = queue.BuildingId,
+		SourceId = queue.SourceId,
+		SourceKind = queue.SourceKind,
 		Capacity = ManpowerConfig.QueueCapacity,
 		Count = #queue.Entries,
 		Entries = entries,
@@ -630,16 +701,38 @@ function ManpowerService:_broadcastQueue(queue: BarracksQueue)
 	self.Client.QueueChanged:Fire(queue.Owner, self:_snapshotQueue(queue))
 end
 
-function ManpowerService:_broadcastEmptyQueue(owner: Player, buildingId: string)
-	self.Client.QueueChanged:Fire(owner, self:_emptyQueueSnapshot(buildingId))
+function ManpowerService:_broadcastEmptyQueue(owner: Player, buildingId: string, sourceKind: string?)
+	self.Client.QueueChanged:Fire(owner, self:_emptyQueueSnapshot(buildingId, sourceKind))
 end
 
-function ManpowerService:_getOwnedBarracks(player: Player, buildingId: any): (any?, string?)
-	if typeof(buildingId) ~= "string" then
+function ManpowerService:_getOwnedProductionSource(player: Player, request: any): (any?, string?)
+	local sourceKind = if type(request) == "table" then request.sourceKind else nil
+	local sourceId = if type(request) == "table" then request.sourceId or request.buildingId else nil
+	if sourceKind == nil and request ~= nil and typeof(request.buildingId) == "string" then
+		sourceKind = SOURCE_KIND_BUILDING
+	end
+
+	if sourceKind == SOURCE_KIND_NEXO then
+		local record = if self._nexoService ~= nil then self._nexoService:GetAssignedRecord(player) else nil
+		if record == nil or record.IsActive ~= true then
+			return nil, "NoActiveNexo"
+		end
+
+		return {
+			SourceKind = SOURCE_KIND_NEXO,
+			SourceId = `Nexo:{record.Id}`,
+			Owner = player,
+			BuildingType = "Nexo",
+			HexPart = record.HexPart,
+		},
+			nil
+	end
+
+	if typeof(sourceId) ~= "string" then
 		return nil, "InvalidBuilding"
 	end
 
-	local record = self._buildService:GetPlacedBuildingRecord(buildingId)
+	local record = self._buildService:GetPlacedBuildingRecord(sourceId)
 	if record == nil then
 		return nil, "MissingBuilding"
 	end
@@ -648,25 +741,43 @@ function ManpowerService:_getOwnedBarracks(player: Player, buildingId: any): (an
 		return nil, "NotOwner"
 	end
 
-	if record.BuildingType ~= "Cuartel" then
-		return nil, "NotBarracks"
+	if #BuildingConfig.GetProductionUnits(record.BuildingType) <= 0 then
+		return nil, "NotProductionBuilding"
 	end
 
-	return record, nil
+	return {
+		SourceKind = SOURCE_KIND_BUILDING,
+		SourceId = record.BuildingId,
+		BuildingId = record.BuildingId,
+		Owner = record.Owner,
+		BuildingType = record.BuildingType,
+		HexPart = record.HexPart,
+	},
+		nil
 end
 
-function ManpowerService:_ensureQueue(record): BarracksQueue
-	local queue = self._queues[record.BuildingId]
+function ManpowerService:_canSourceProduceUnit(source, unitType: string): boolean
+	if source.SourceKind == SOURCE_KIND_NEXO then
+		return BuildingConfig.CanNexoProduceUnit(unitType)
+	end
+
+	return BuildingConfig.CanProduceUnit(source.BuildingType, unitType)
+end
+
+function ManpowerService:_ensureQueue(source): BarracksQueue
+	local queue = self._queues[source.SourceId]
 	if queue ~= nil then
 		return queue
 	end
 
 	queue = {
-		BuildingId = record.BuildingId,
-		Owner = record.Owner,
+		BuildingId = source.SourceId,
+		SourceId = source.SourceId,
+		SourceKind = source.SourceKind,
+		Owner = source.Owner,
 		Entries = {},
 	}
-	self._queues[record.BuildingId] = queue
+	self._queues[source.SourceId] = queue
 
 	return queue
 end
@@ -743,8 +854,8 @@ function ManpowerService:_scheduleSpawnRetry(queue: BarracksQueue, entry: QueueE
 end
 
 function ManpowerService:_trySpawnQueueHead(queue: BarracksQueue, entry: QueueEntry): boolean
-	local buildingRecord = self._buildService:GetPlacedBuildingRecord(queue.BuildingId)
-	if buildingRecord == nil or buildingRecord.Owner ~= queue.Owner or buildingRecord.BuildingType ~= "Cuartel" then
+	local source = self:_resolveQueueSource(queue)
+	if source == nil then
 		self:_cancelQueue(queue, true)
 		return true
 	end
@@ -754,7 +865,7 @@ function ManpowerService:_trySpawnQueueHead(queue: BarracksQueue, entry: QueueEn
 		return false
 	end
 
-	local spawnHex, spawnSlot = self:_findBarracksSpawnSlot(buildingRecord.HexPart)
+	local spawnHex, spawnSlot = self:_findProductionSpawnSlot(source.HexPart)
 	if spawnHex == nil or spawnSlot == nil then
 		return false
 	end
@@ -772,14 +883,44 @@ function ManpowerService:_trySpawnQueueHead(queue: BarracksQueue, entry: QueueEn
 	return true
 end
 
-function ManpowerService:_findBarracksSpawnSlot(hexPart: BasePart): (HexRecord?, number?)
-	local barracksHex = self:_getHexRecord(hexPart)
-	if barracksHex == nil then
+function ManpowerService:_resolveQueueSource(queue: BarracksQueue): any?
+	if queue.SourceKind == SOURCE_KIND_NEXO then
+		local record = if self._nexoService ~= nil then self._nexoService:GetAssignedRecord(queue.Owner) else nil
+		if record == nil or record.IsActive ~= true then
+			return nil
+		end
+
+		return {
+			SourceKind = SOURCE_KIND_NEXO,
+			SourceId = queue.SourceId,
+			Owner = queue.Owner,
+			BuildingType = "Nexo",
+			HexPart = record.HexPart,
+		}
+	end
+
+	local buildingRecord = self._buildService:GetPlacedBuildingRecord(queue.SourceId)
+	if buildingRecord == nil or buildingRecord.Owner ~= queue.Owner then
+		return nil
+	end
+
+	return {
+		SourceKind = SOURCE_KIND_BUILDING,
+		SourceId = buildingRecord.BuildingId,
+		Owner = buildingRecord.Owner,
+		BuildingType = buildingRecord.BuildingType,
+		HexPart = buildingRecord.HexPart,
+	}
+end
+
+function ManpowerService:_findProductionSpawnSlot(hexPart: BasePart): (HexRecord?, number?)
+	local productionHex = self:_getHexRecord(hexPart)
+	if productionHex == nil then
 		return nil, nil
 	end
 
-	for index = 1, #barracksHex.Neighbors do
-		local spawnHex = barracksHex.Neighbors[index]
+	for index = 1, #productionHex.Neighbors do
+		local spawnHex = productionHex.Neighbors[index]
 		if self:_isHexNavigationPassable(spawnHex) then
 			local spawnSlot = self:_getAvailableSlot(spawnHex.Key)
 			if spawnSlot ~= nil then
@@ -1246,7 +1387,33 @@ function ManpowerService:_canHexesConnect(fromHex: HexRecord, toHex: HexRecord):
 		return false
 	end
 
-	return math.abs(fromHex.Center.Y - toHex.Center.Y) <= getMaxStepHeight()
+	if math.abs(fromHex.Center.Y - toHex.Center.Y) > getMaxStepHeight() then
+		return false
+	end
+
+	if self._buildService ~= nil then
+		local fromSocketName = self:_getSocketNameToward(fromHex, toHex)
+		local toSocketName = self:_getSocketNameToward(toHex, fromHex)
+		if
+			(fromSocketName ~= nil and self._buildService:IsEdgeMovementBlocked(fromHex.Part, fromSocketName))
+			or (toSocketName ~= nil and self._buildService:IsEdgeMovementBlocked(toHex.Part, toSocketName))
+		then
+			return false
+		end
+	end
+
+	return true
+end
+
+function ManpowerService:_getSocketNameToward(fromHex: HexRecord, toHex: HexRecord): string?
+	for directionIndex = 1, 6 do
+		local neighborCoord = HexUtils.getNeighbor(fromHex.Q, fromHex.R, directionIndex)
+		if neighborCoord.q == toHex.Q and neighborCoord.r == toHex.R then
+			return HexUtils.getEdgeSocketName(directionIndex)
+		end
+	end
+
+	return nil
 end
 
 function ManpowerService:_isHexNavigationPassable(hexRecord: HexRecord): boolean
@@ -1362,6 +1529,42 @@ function ManpowerService:_canUnitEnterHex(unit: UnitRecord, hexKey: string): boo
 	end
 
 	return self:_getAvailableSlot(hexKey, unit.Id) ~= nil
+end
+
+function ManpowerService:_isIdleBuilder(unit): boolean
+	return unit ~= nil
+		and unit.UnitType == "Constructor"
+		and self:IsCombatUnitActive(unit)
+		and unit.Segment == nil
+		and unit.OrderDestinationKey == nil
+end
+
+function ManpowerService:_findNearestIdleBuilder(player: Player, targetHex: HexRecord): UnitRecord?
+	local ownerUnits = self._unitsByOwner[player]
+	if ownerUnits == nil then
+		return nil
+	end
+
+	local bestUnit = nil
+	local bestDistance = math.huge
+	for _, unit in ownerUnits do
+		if not self:_isIdleBuilder(unit) then
+			continue
+		end
+
+		local unitHex = self._gridByKey[unit.CurrentHexKey]
+		if unitHex == nil then
+			continue
+		end
+
+		local distance = HexUtils.distance(unitHex.Q, unitHex.R, targetHex.Q, targetHex.R)
+		if distance < bestDistance then
+			bestDistance = distance
+			bestUnit = unit
+		end
+	end
+
+	return bestUnit
 end
 
 function ManpowerService:_ensureHexOccupancy(hexKey: string): HexOccupancy
@@ -1496,7 +1699,7 @@ function ManpowerService:_cancelQueue(queue: BarracksQueue, releasePopulation: b
 	end
 
 	table.clear(queue.Entries)
-	self:_broadcastEmptyQueue(queue.Owner, queue.BuildingId)
+	self:_broadcastEmptyQueue(queue.Owner, queue.BuildingId, queue.SourceKind)
 end
 
 function ManpowerService:_destroyUnit(unit: UnitRecord, reason: string)
@@ -1520,7 +1723,7 @@ function ManpowerService:_destroyUnit(unit: UnitRecord, reason: string)
 end
 
 function ManpowerService:_handleBuildingDestroyed(payload)
-	if type(payload) ~= "table" or payload.BuildingType ~= "Cuartel" then
+	if type(payload) ~= "table" or typeof(payload.BuildingId) ~= "string" then
 		return
 	end
 

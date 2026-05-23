@@ -111,7 +111,7 @@ function TargetingService:RegisterUnit(unit)
 
 	local definition = unit.Definition
 	local combat = definition.Combat
-	local hitRadius = if type(combat) == "table" then combat.HitRadius else nil
+	local hitRadius = if type(combat) == "table" then combat.HitRadius else definition.HitRadius
 	if typeof(hitRadius) ~= "number" or hitRadius <= 0 then
 		warn(("[TargetingService] Unit %s has no valid Combat.HitRadius"):format(unit.UnitType))
 		return

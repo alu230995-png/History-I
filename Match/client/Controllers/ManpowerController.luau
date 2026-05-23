@@ -77,6 +77,9 @@ local function getUnitSource(unitType: string): Model?
 	end
 
 	local source = resolvePath(definition.Path)
+	if source == nil and definition.ModelFallbackPath ~= nil then
+		source = resolvePath(definition.ModelFallbackPath)
+	end
 	return if source ~= nil and source:IsA("Model") then source else nil
 end
 

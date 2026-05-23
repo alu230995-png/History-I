@@ -1,6 +1,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -29,6 +30,9 @@ type SocketState = {
 	HP: number,
 	ModelRef: Instance?,
 	Trove: any?,
+	Operational: boolean,
+	ConstructionId: string?,
+	Progress: number,
 }
 
 type HexData = {
@@ -66,13 +70,17 @@ local BuildService = Knit.CreateService({
 		BuildingPlaced = Knit.CreateSignal(),
 		BuildingMoved = Knit.CreateSignal(),
 		BuildingDestroyed = Knit.CreateSignal(),
+		ConstructionChanged = Knit.CreateSignal(),
+		ConstructionCompleted = Knit.CreateSignal(),
 		ResourcesChanged = Knit.CreateSignal(),
 	},
 })
 
 local MIN_REQUEST_INTERVAL = 0.12
+local CONSTRUCTION_STEP_SECONDS = 0.25
 local HEALTH_BAR_SIZE = UDim2.fromOffset(72, 6)
 local HEALTH_BAR_OFFSET = Vector3.new(0, 3, 0)
+local CONSTRUCTION_BAR_SIZE = UDim2.fromOffset(96, 22)
 
 local function isFiniteNumber(value: any): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
@@ -116,6 +124,9 @@ local function createSocketState(): SocketState
 		HP = 0,
 		ModelRef = nil,
 		Trove = nil,
+		Operational = false,
+		ConstructionId = nil,
+		Progress = 0,
 	}
 end
 
@@ -251,6 +262,9 @@ end
 
 local function cloneBuildingModel(buildingType: string, definition): Model?
 	local source = resolvePath(definition.Path)
+	if source == nil and definition.ModelFallbackPath ~= nil then
+		source = resolvePath(definition.ModelFallbackPath)
+	end
 	if source == nil then
 		warn(("[BuildService] Missing model path for %s: %s"):format(buildingType, tostring(definition.Path)))
 		return nil
@@ -268,6 +282,10 @@ end
 
 local function createBuildingId(player: Player, buildingType: string): string
 	return `{buildingType}_{player.UserId}_{math.floor(os.clock() * 100000)}`
+end
+
+local function createConstructionId(player: Player, buildingType: string): string
+	return `Construction_{buildingType}_{player.UserId}_{math.floor(os.clock() * 100000)}`
 end
 
 local function createHealthBillboard(model: Model): BillboardGui?
@@ -348,6 +366,9 @@ local function preparePlacedModel(model: Model, player: Player, buildingType: st
 	model:SetAttribute("HP", definition.HP)
 	model:SetAttribute("MaxHP", definition.HP)
 	model:SetAttribute("Interactable", definition.Interactable == true)
+	model:SetAttribute("Operational", true)
+	model:SetAttribute("ConstructionState", BuildingConfig.ConstructionStates.Complete)
+	model:SetAttribute("Progress", 1)
 
 	for _, descendant in model:GetDescendants() do
 		if descendant:IsA("BasePart") then
@@ -356,6 +377,133 @@ local function preparePlacedModel(model: Model, player: Player, buildingType: st
 			descendant.CanTouch = false
 			descendant.CanQuery = true
 		end
+	end
+end
+
+local function prepareConstructionModel(
+	model: Model,
+	player: Player,
+	buildingType: string,
+	definition,
+	constructionId: string
+)
+	model.Name = constructionId
+	model:SetAttribute("ConstructionId", constructionId)
+	model:SetAttribute("OwnerUserId", player.UserId)
+	model:SetAttribute("BuildingType", buildingType)
+	model:SetAttribute("HP", definition.HP)
+	model:SetAttribute("MaxHP", definition.HP)
+	model:SetAttribute("Interactable", false)
+	model:SetAttribute("Operational", false)
+	model:SetAttribute("ConstructionState", BuildingConfig.ConstructionStates.Pending)
+	model:SetAttribute("Progress", 0)
+
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("MeshPart") and descendant.TextureID ~= "" then
+			descendant.TextureID = ""
+		end
+
+		if descendant:IsA("Decal") or descendant:IsA("Texture") or descendant:IsA("SurfaceAppearance") then
+			descendant:Destroy()
+		elseif descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = true
+			descendant.CastShadow = false
+			descendant.Material = Enum.Material.ForceField
+			descendant.Color = BuildingConfig.Shadow.ConstructionColor
+			descendant.Transparency = BuildingConfig.Shadow.ConstructionTransparency
+		end
+	end
+end
+
+local function createConstructionBillboard(model: Model): BillboardGui?
+	local primaryPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+	if primaryPart == nil then
+		return nil
+	end
+
+	local _boxCFrame, boxSize = model:GetBoundingBox()
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = BuildingConfig.ConstructionBillboardName
+	billboard.Adornee = primaryPart
+	billboard.AlwaysOnTop = true
+	billboard.LightInfluence = 0
+	billboard.MaxDistance = 220
+	billboard.Size = CONSTRUCTION_BAR_SIZE
+	billboard.StudsOffsetWorldSpace = Vector3.new(0, (boxSize.Y * 0.5) + 4, 0)
+
+	local background = Instance.new("Frame")
+	background.Name = "Background"
+	background.BackgroundColor3 = Color3.fromRGB(8, 12, 18)
+	background.BackgroundTransparency = 0.12
+	background.BorderSizePixel = 0
+	background.Size = UDim2.fromScale(1, 1)
+	background.Parent = billboard
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Code
+	label.Text = "OBRA"
+	label.TextColor3 = Color3.fromRGB(225, 235, 245)
+	label.TextSize = 10
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Position = UDim2.fromOffset(6, 2)
+	label.Size = UDim2.new(1, -12, 0, 12)
+	label.Parent = background
+
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.BackgroundColor3 = Color3.fromRGB(31, 43, 58)
+	track.BorderSizePixel = 0
+	track.Position = UDim2.fromOffset(6, 16)
+	track.Size = UDim2.new(1, -12, 0, 4)
+	track.Parent = background
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = BuildingConfig.Shadow.ConstructionColor
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.fromScale(0, 1)
+	fill.Parent = track
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = BuildingConfig.Shadow.ConstructionColor
+	stroke.Thickness = 1
+	stroke.Transparency = 0.2
+	stroke.Parent = background
+
+	billboard.Parent = primaryPart
+	return billboard
+end
+
+local function bindConstructionBillboard(model: Model, billboard: BillboardGui)
+	local background = billboard:FindFirstChild("Background")
+	local fill = if background ~= nil then background:FindFirstChild("Track") else nil
+	fill = if fill ~= nil then fill:FindFirstChild("Fill") else nil
+	local label = if background ~= nil then background:FindFirstChild("Label") else nil
+	if fill == nil or not fill:IsA("Frame") or label == nil or not label:IsA("TextLabel") then
+		return nil
+	end
+
+	local function update()
+		local progress = model:GetAttribute("Progress")
+		local state = model:GetAttribute("ConstructionState")
+		local alpha = if typeof(progress) == "number" then math.clamp(progress, 0, 1) else 0
+		fill.Size = UDim2.fromScale(alpha, 1)
+		label.Text = if state == BuildingConfig.ConstructionStates.Complete
+			then "FINISH"
+			else `OBRA {math.floor(alpha * 100)}%`
+	end
+
+	update()
+	local progressConnection = model:GetAttributeChangedSignal("Progress"):Connect(update)
+	local stateConnection = model:GetAttributeChangedSignal("ConstructionState"):Connect(update)
+	return function()
+		progressConnection:Disconnect()
+		stateConnection:Disconnect()
 	end
 end
 
@@ -369,6 +517,9 @@ local function snapshotSockets(sockets: { [string]: SocketState }): { [string]: 
 			BlockedReason = socketState.BlockedReason,
 			Occupied = socketState.Building ~= nil,
 			HP = socketState.HP,
+			Operational = socketState.Operational,
+			ConstructionId = socketState.ConstructionId,
+			Progress = socketState.Progress,
 		}
 	end
 
@@ -394,6 +545,9 @@ local function clearSocketState(socketState: SocketState, destroyTrove: boolean,
 	socketState.HP = 0
 	socketState.ModelRef = nil
 	socketState.Trove = nil
+	socketState.Operational = false
+	socketState.ConstructionId = nil
+	socketState.Progress = 0
 end
 
 function BuildService.Client:GetResources(player: Player): ResourceState
@@ -443,18 +597,26 @@ function BuildService:KnitInit()
 	self._boardState = {}
 	self._buildingLocations = {}
 	self._buildingCounts = {}
+	self._pendingCounts = {}
+	self._constructionLocations = {}
 	self._lastRequestAt = {}
+	self._constructionAccumulator = 0
 	self._gameService = nil
 	self._nexoService = nil
 	self._resourceService = nil
 	self._territoryService = nil
+	self._manpowerService = nil
 	self.BuildingDestroyed = Signal.new()
 	self.BuildingPlaced = Signal.new()
 	self.BuildingMoved = Signal.new()
+	self.ConstructionChanged = Signal.new()
+	self.ConstructionCompleted = Signal.new()
 	self.CenterPathingChanged = Signal.new()
 	self._trove:Add(self.BuildingDestroyed)
 	self._trove:Add(self.BuildingPlaced)
 	self._trove:Add(self.BuildingMoved)
+	self._trove:Add(self.ConstructionChanged)
+	self._trove:Add(self.ConstructionCompleted)
 	self._trove:Add(self.CenterPathingChanged)
 
 	self._placedFolder = Instance.new("Folder")
@@ -468,14 +630,19 @@ function BuildService:KnitStart()
 	self._nexoService = Knit.GetService("NexoService")
 	self._resourceService = Knit.GetService("MatchResourceService")
 	self._territoryService = Knit.GetService("TerritoryService")
+	self._manpowerService = Knit.GetService("ManpowerService")
 	self:RebuildBoardState()
 
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
 		self._buildingCounts[player] = nil
+		self._pendingCounts[player] = nil
 		self._lastRequestAt[player] = nil
 	end))
 	self._trove:Add(self._resourceService.ResourcesChanged:Connect(function(player: Player, resources: ResourceState)
 		self.Client.ResourcesChanged:Fire(player, resources)
+	end))
+	self._trove:Add(RunService.Heartbeat:Connect(function(deltaTime: number)
+		self:_stepConstructionHeartbeat(deltaTime)
 	end))
 end
 
@@ -503,7 +670,7 @@ function BuildService:GetPlacedBuildingRecord(buildingId: any): any?
 
 	local socketState = location.SocketState :: SocketState
 	local model = socketState.ModelRef
-	if socketState.Owner == nil or socketState.Building == nil or model == nil then
+	if socketState.Owner == nil or socketState.Building == nil or model == nil or socketState.Operational ~= true then
 		return nil
 	end
 
@@ -515,6 +682,7 @@ function BuildService:GetPlacedBuildingRecord(buildingId: any): any?
 		HexPart = location.HexData.HexPart,
 		HexData = location.HexData,
 		SocketName = location.SocketName,
+		Operational = true,
 	}
 end
 
@@ -538,7 +706,23 @@ function BuildService:IsHexCenterBlocked(hexPart: BasePart): boolean
 	end
 
 	local centerState = hexData.Sockets.Center
-	return centerState ~= nil and centerState.Building ~= nil
+	return centerState ~= nil and centerState.Building ~= nil and centerState.Operational == true
+end
+
+function BuildService:IsEdgeMovementBlocked(hexPart: BasePart, socketName: string): boolean
+	local hexData = self:GetHexData(hexPart)
+	if hexData == nil then
+		return false
+	end
+
+	local socketState = hexData.Sockets[socketName]
+	if socketState == nil or socketState.Operational ~= true then
+		return false
+	end
+
+	local buildingType = socketState.Building
+	local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
+	return definition ~= nil and definition.BlocksEdgeMovement == true
 end
 
 function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRef: Instance?): boolean
@@ -557,6 +741,7 @@ function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRe
 	socketState.BlockedReason = reason or "Blocked"
 	socketState.HP = 0
 	socketState.ModelRef = modelRef
+	socketState.Operational = true
 	self.CenterPathingChanged:Fire(hexPart)
 
 	return true
@@ -603,16 +788,24 @@ function BuildService:RequestBuild(
 	end
 
 	local definition = validation.definition
-	local buildingId = createBuildingId(player, validation.buildingType)
 
-	self._resourceService:ApplyBuildingPlaced(
-		player,
-		definition.Gold or 0,
-		definition.Population or 0,
-		definition.PopulationCapBonus or 0
-	)
+	self._resourceService:ApplyBuildingPlaced(player, definition.Gold or 0, definition.Population or 0, 0)
 
 	local model = validation.model
+	if definition.RequiresBuilder == false then
+		local buildingId = self:_placeOperationalBuilding(player, validation, model)
+		return { ok = true, resources = self:_getResources(player), buildingId = buildingId }
+	end
+
+	local constructionId = self:_createConstruction(player, validation, model)
+	self:_tryAssignBuilderToConstruction(constructionId)
+
+	return { ok = true, resources = self:_getResources(player), constructionId = constructionId }
+end
+
+function BuildService:_placeOperationalBuilding(player: Player, validation, model: Model): string
+	local definition = validation.definition
+	local buildingId = createBuildingId(player, validation.buildingType)
 	preparePlacedModel(model, player, validation.buildingType, definition, buildingId)
 	model:PivotTo(validation.placementCFrame)
 	model.Parent = self._placedFolder
@@ -637,6 +830,9 @@ function BuildService:RequestBuild(
 	socketState.HP = definition.HP
 	socketState.ModelRef = model
 	socketState.Trove = buildingTrove
+	socketState.Operational = true
+	socketState.ConstructionId = nil
+	socketState.Progress = 1
 	model:SetAttribute("HexSocketName", validation.socketName)
 	model:SetAttribute("PlacementRotation", validation.rotation)
 	self._buildingLocations[buildingId] = {
@@ -645,6 +841,7 @@ function BuildService:RequestBuild(
 		SocketState = socketState,
 	}
 	self:_incrementBuildingCount(player, validation.buildingType)
+	self:_notifyBuildingIncomeChanged(player)
 	self.BuildingPlaced:Fire(self:GetPlacedBuildingRecord(buildingId))
 
 	self.Client.BuildingPlaced:FireAll({
@@ -659,7 +856,233 @@ function BuildService:RequestBuild(
 		self.CenterPathingChanged:Fire(validation.hexPart)
 	end
 
-	return { ok = true, resources = self:_getResources(player) }
+	return buildingId
+end
+
+function BuildService:_createConstruction(player: Player, validation, model: Model): string
+	local definition = validation.definition
+	local constructionId = createConstructionId(player, validation.buildingType)
+	prepareConstructionModel(model, player, validation.buildingType, definition, constructionId)
+	model:PivotTo(validation.placementCFrame)
+	model:SetAttribute("HexSocketName", validation.socketName)
+	model:SetAttribute("PlacementRotation", validation.rotation)
+	model.Parent = self._placedFolder
+
+	local constructionTrove = Trove.new()
+	constructionTrove:Add(model)
+	self._trove:Add(constructionTrove)
+
+	local billboard = createConstructionBillboard(model)
+	if billboard ~= nil then
+		constructionTrove:Add(billboard)
+		local cleanupBillboard = bindConstructionBillboard(model, billboard)
+		if cleanupBillboard ~= nil then
+			constructionTrove:Add(cleanupBillboard)
+		end
+	end
+
+	local socketState = validation.socketState
+	socketState.Owner = player
+	socketState.Building = validation.buildingType
+	socketState.BlockedReason = nil
+	socketState.HP = definition.HP
+	socketState.ModelRef = model
+	socketState.Trove = constructionTrove
+	socketState.Operational = false
+	socketState.ConstructionId = constructionId
+	socketState.Progress = 0
+
+	self._constructionLocations[constructionId] = {
+		ConstructionId = constructionId,
+		Owner = player,
+		BuildingType = validation.buildingType,
+		Definition = definition,
+		HexData = validation.hexData,
+		HexPart = validation.hexPart,
+		SocketName = validation.socketName,
+		SocketState = socketState,
+		Model = model,
+		Rotation = validation.rotation,
+		PlacementCFrame = validation.placementCFrame,
+		Progress = 0,
+		State = BuildingConfig.ConstructionStates.Pending,
+	}
+	self:_incrementPendingCount(player, validation.buildingType)
+	self:_broadcastConstructionChanged(constructionId)
+
+	return constructionId
+end
+
+function BuildService:_stepConstructionHeartbeat(deltaTime: number)
+	if self._destroyed then
+		return
+	end
+
+	self._constructionAccumulator += math.min(deltaTime, 0.5)
+	while self._constructionAccumulator >= CONSTRUCTION_STEP_SECONDS do
+		self._constructionAccumulator -= CONSTRUCTION_STEP_SECONDS
+		self:_stepConstructions(CONSTRUCTION_STEP_SECONDS)
+	end
+end
+
+function BuildService:_stepConstructions(deltaSeconds: number)
+	for constructionId, construction in self._constructionLocations do
+		local builder = self:_getBuilderForConstruction(construction)
+		local nextState = if builder ~= nil
+			then BuildingConfig.ConstructionStates.Building
+			else BuildingConfig.ConstructionStates.Pending
+		local changed = construction.State ~= nextState
+		construction.State = nextState
+
+		if builder ~= nil then
+			local buildTime = math.max(construction.Definition.BuildTime or 0, 0.001)
+			construction.Progress = math.clamp(construction.Progress + (deltaSeconds / buildTime), 0, 1)
+			changed = true
+		end
+
+		construction.SocketState.Progress = construction.Progress
+		construction.Model:SetAttribute("Progress", construction.Progress)
+		construction.Model:SetAttribute("ConstructionState", construction.State)
+
+		if construction.Progress >= 1 then
+			self:_completeConstruction(constructionId, construction)
+		elseif changed then
+			self:_broadcastConstructionChanged(constructionId)
+		end
+	end
+end
+
+function BuildService:_getBuilderForConstruction(construction)
+	if self._manpowerService == nil then
+		return nil
+	end
+
+	return self._manpowerService:GetAvailableBuilderOnHex(construction.Owner, construction.HexPart)
+end
+
+function BuildService:_tryAssignBuilderToConstruction(constructionId: string)
+	local construction = self._constructionLocations[constructionId]
+	if construction == nil or self._manpowerService == nil then
+		return
+	end
+
+	self._manpowerService:AssignNearestBuilderToHex(construction.Owner, construction.HexPart)
+end
+
+function BuildService:_completeConstruction(constructionId: string, construction)
+	if self._constructionLocations[constructionId] ~= construction then
+		return
+	end
+
+	self._constructionLocations[constructionId] = nil
+	self:_decrementPendingCount(construction.Owner, construction.BuildingType)
+
+	local model = construction.Model
+	local socketState = construction.SocketState
+	local oldTrove = socketState.Trove
+	if oldTrove ~= nil then
+		local removed = self._trove:Remove(oldTrove)
+		if not removed then
+			oldTrove:Destroy()
+		end
+	end
+
+	local newModel = cloneBuildingModel(construction.BuildingType, construction.Definition)
+	if newModel == nil then
+		newModel = model
+	else
+		model:Destroy()
+	end
+
+	local buildingId = createBuildingId(construction.Owner, construction.BuildingType)
+	preparePlacedModel(newModel, construction.Owner, construction.BuildingType, construction.Definition, buildingId)
+	newModel:PivotTo(construction.PlacementCFrame)
+	newModel:SetAttribute("HexSocketName", construction.SocketName)
+	newModel:SetAttribute("PlacementRotation", construction.Rotation)
+	newModel.Parent = self._placedFolder
+
+	local buildingTrove = Trove.new()
+	buildingTrove:Add(newModel)
+	self._trove:Add(buildingTrove)
+	local healthBillboard = createHealthBillboard(newModel)
+	if healthBillboard ~= nil then
+		buildingTrove:Add(healthBillboard)
+		local cleanupHealthBinding = bindHealthBillboard(newModel, healthBillboard)
+		if cleanupHealthBinding ~= nil then
+			buildingTrove:Add(cleanupHealthBinding)
+		end
+	end
+
+	socketState.Owner = construction.Owner
+	socketState.Building = construction.BuildingType
+	socketState.BlockedReason = nil
+	socketState.HP = construction.Definition.HP
+	socketState.ModelRef = newModel
+	socketState.Trove = buildingTrove
+	socketState.Operational = true
+	socketState.ConstructionId = nil
+	socketState.Progress = 1
+
+	self._buildingLocations[buildingId] = {
+		HexData = construction.HexData,
+		SocketName = construction.SocketName,
+		SocketState = socketState,
+	}
+	self:_incrementBuildingCount(construction.Owner, construction.BuildingType)
+	self._resourceService:ApplyBuildingCompleted(construction.Owner, construction.Definition.PopulationCapBonus or 0)
+	self:_notifyBuildingIncomeChanged(construction.Owner)
+
+	local record = self:GetPlacedBuildingRecord(buildingId)
+	if record ~= nil then
+		self.BuildingPlaced:Fire(record)
+	end
+	self.ConstructionCompleted:Fire({
+		ConstructionId = constructionId,
+		BuildingId = buildingId,
+		Owner = construction.Owner,
+		OwnerUserId = construction.Owner.UserId,
+		BuildingType = construction.BuildingType,
+		HexPart = construction.HexPart,
+		SocketName = construction.SocketName,
+	})
+	self.Client.ConstructionCompleted:FireAll({
+		ConstructionId = constructionId,
+		BuildingId = buildingId,
+		OwnerUserId = construction.Owner.UserId,
+		BuildingType = construction.BuildingType,
+		HexPart = construction.HexPart,
+		SocketName = construction.SocketName,
+	})
+	self.Client.BuildingPlaced:FireAll({
+		BuildingId = buildingId,
+		OwnerUserId = construction.Owner.UserId,
+		BuildingType = construction.BuildingType,
+		hexPart = construction.HexPart,
+		socketName = construction.SocketName,
+		rotation = construction.Rotation,
+	})
+	if construction.SocketName == "Center" or construction.Definition.BlocksEdgeMovement == true then
+		self.CenterPathingChanged:Fire(construction.HexPart)
+	end
+end
+
+function BuildService:_broadcastConstructionChanged(constructionId: string)
+	local construction = self._constructionLocations[constructionId]
+	if construction == nil then
+		return
+	end
+
+	local payload = {
+		ConstructionId = constructionId,
+		OwnerUserId = construction.Owner.UserId,
+		BuildingType = construction.BuildingType,
+		Progress = construction.Progress,
+		State = construction.State,
+		HexPart = construction.HexPart,
+		SocketName = construction.SocketName,
+	}
+	self.ConstructionChanged:Fire(payload)
+	self.Client.ConstructionChanged:FireAll(payload)
 end
 
 function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: boolean, reason: string? }
@@ -717,6 +1140,10 @@ function BuildService:RequestMove(player: Player, request: MoveRequest): { ok: b
 		self.CenterPathingChanged:Fire(validation.currentHexPart)
 	end
 	if validation.socketName == "Center" then
+		self.CenterPathingChanged:Fire(validation.hexPart)
+	end
+	if validation.definition.BlocksEdgeMovement == true then
+		self.CenterPathingChanged:Fire(validation.currentHexPart)
 		self.CenterPathingChanged:Fire(validation.hexPart)
 	end
 
@@ -817,6 +1244,9 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 	if definition == nil then
 		return { ok = false, reason = "InvalidBuilding" }
 	end
+	if definition.Enabled ~= true then
+		return { ok = false, reason = "BuildingDisabled" }
+	end
 
 	local placementMode = definition.PlacementMode or BuildingConfig.PlacementModes.Center
 	if not BuildingConfig.IsSocketValidForPlacementMode(placementMode, socketName) then
@@ -845,6 +1275,12 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 		if not CollectionService:HasTag(hexPart, requiredHexTag) then
 			return { ok = false, reason = "RequiredTagMissing" }
 		end
+		if
+			requiredHexTag == BuildingConfig.HexTags.General
+			and CollectionService:HasTag(hexPart, BuildingConfig.HexTags.Special)
+		then
+			return { ok = false, reason = "ExclusiveBuildingHex" }
+		end
 	else
 		for _, otherDef in BuildingConfig.Buildings do
 			if otherDef.RequiredHexTag ~= nil and CollectionService:HasTag(hexPart, otherDef.RequiredHexTag) then
@@ -871,7 +1307,10 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 		return { ok = false, reason = "SocketOccupied" }
 	end
 
-	if typeof(definition.Limit) == "number" and self:_getBuildingCount(player, buildingType) >= definition.Limit then
+	if
+		typeof(definition.Limit) == "number"
+		and self:_getTotalBuildingCount(player, buildingType) >= definition.Limit
+	then
 		return { ok = false, reason = "BuildingLimitReached" }
 	end
 
@@ -985,6 +1424,12 @@ function BuildService:_validateMoveRequest(player: Player, request: MoveRequest)
 		if not CollectionService:HasTag(hexPart, requiredHexTag) then
 			return { ok = false, reason = "RequiredTagMissing" }
 		end
+		if
+			requiredHexTag == BuildingConfig.HexTags.General
+			and CollectionService:HasTag(hexPart, BuildingConfig.HexTags.Special)
+		then
+			return { ok = false, reason = "ExclusiveBuildingHex" }
+		end
 	else
 		for _, otherDef in BuildingConfig.Buildings do
 			if otherDef.RequiredHexTag ~= nil and CollectionService:HasTag(hexPart, otherDef.RequiredHexTag) then
@@ -1034,6 +1479,7 @@ function BuildService:_validateMoveRequest(player: Player, request: MoveRequest)
 		ok = true,
 		buildingId = request.buildingId,
 		buildingType = buildingType,
+		definition = definition,
 		model = model,
 		hp = currentSocketState.HP,
 		currentSocketState = currentSocketState,
@@ -1096,6 +1542,15 @@ function BuildService:_getBuildingCount(player: Player, buildingType: string): n
 	return if counts ~= nil then counts[buildingType] or 0 else 0
 end
 
+function BuildService:_getPendingCount(player: Player, buildingType: string): number
+	local counts = self._pendingCounts[player]
+	return if counts ~= nil then counts[buildingType] or 0 else 0
+end
+
+function BuildService:_getTotalBuildingCount(player: Player, buildingType: string): number
+	return self:_getBuildingCount(player, buildingType) + self:_getPendingCount(player, buildingType)
+end
+
 function BuildService:_incrementBuildingCount(player: Player, buildingType: string)
 	local counts = self._buildingCounts[player]
 	if counts == nil then
@@ -1113,6 +1568,49 @@ function BuildService:_decrementBuildingCount(player: Player, buildingType: stri
 	end
 
 	counts[buildingType] = math.max(0, (counts[buildingType] or 0) - 1)
+end
+
+function BuildService:_incrementPendingCount(player: Player, buildingType: string)
+	local counts = self._pendingCounts[player]
+	if counts == nil then
+		counts = {}
+		self._pendingCounts[player] = counts
+	end
+
+	counts[buildingType] = (counts[buildingType] or 0) + 1
+end
+
+function BuildService:_decrementPendingCount(player: Player, buildingType: string)
+	local counts = self._pendingCounts[player]
+	if counts == nil then
+		return
+	end
+
+	counts[buildingType] = math.max(0, (counts[buildingType] or 0) - 1)
+end
+
+function BuildService:GetWeeklyIncomeBonus(player: Player): number
+	local total = 0
+	for _, location in self._buildingLocations do
+		local socketState = location.SocketState :: SocketState
+		if socketState.Owner == player and socketState.Operational == true then
+			local buildingType = socketState.Building
+			local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
+			local income = if definition ~= nil then definition.Income else nil
+			local weeklyGold = if type(income) == "table" then income.WeeklyGold else nil
+			if typeof(weeklyGold) == "number" and weeklyGold > 0 then
+				total += weeklyGold
+			end
+		end
+	end
+
+	return total
+end
+
+function BuildService:_notifyBuildingIncomeChanged(player: Player)
+	if self._resourceService ~= nil then
+		self._resourceService:RefreshIncome(player)
+	end
 end
 
 function BuildService:_validateTerritory(player: Player, hexData: HexData): (boolean, string?)
@@ -1155,6 +1653,7 @@ function BuildService:_destroyBuilding(buildingId: string, location)
 	clearSocketState(socketState, true, self._trove)
 	self:_decrementBuildingCount(player, buildingType)
 	self._resourceService:ApplyBuildingRemoved(player, definition.Population or 0, definition.PopulationCapBonus or 0)
+	self:_notifyBuildingIncomeChanged(player)
 	self.Client.BuildingDestroyed:FireAll({
 		BuildingId = buildingId,
 		OwnerUserId = player.UserId,
@@ -1166,7 +1665,7 @@ function BuildService:_destroyBuilding(buildingId: string, location)
 		OwnerUserId = player.UserId,
 		BuildingType = buildingType,
 	})
-	if location.SocketName == "Center" then
+	if location.SocketName == "Center" or definition.BlocksEdgeMovement == true then
 		self.CenterPathingChanged:Fire(location.HexData.HexPart)
 	end
 end
@@ -1216,6 +1715,8 @@ function BuildService:Destroy()
 	table.clear(self._boardState)
 	table.clear(self._buildingLocations)
 	table.clear(self._buildingCounts)
+	table.clear(self._pendingCounts)
+	table.clear(self._constructionLocations)
 	table.clear(self._lastRequestAt)
 end
 

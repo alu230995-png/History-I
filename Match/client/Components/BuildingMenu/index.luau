@@ -4,6 +4,7 @@ local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local React = require(Packages:WaitForChild("React"))
 
+local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("BuildingConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
 local IconFrame = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("IconFrame"))
@@ -163,7 +164,8 @@ local function queueSlot(entry, layoutOrder: number)
 end
 
 local function barracksPanel(props)
-	if not props.isBarracks or not props.canEdit then
+	local productionUnits = props.productionUnits
+	if type(productionUnits) ~= "table" or #productionUnits <= 0 or not props.canEdit then
 		return nil
 	end
 
@@ -216,12 +218,26 @@ local function barracksPanel(props)
 				SortOrder = Enum.SortOrder.LayoutOrder,
 				Padding = UDim.new(0, px(spacing.XXl)),
 			}),
-			Infanteria = unitCard("InfanteriaLigera", 1, queueFull, function()
-				props.onQueueUnit("InfanteriaLigera")
-			end),
-			Tanque = unitCard("Tanque", 2, queueFull, function()
-				props.onQueueUnit("Tanque")
-			end),
+			Units = (function()
+				local children = {
+					Layout = React.createElement("UIListLayout", {
+						FillDirection = Enum.FillDirection.Horizontal,
+						HorizontalAlignment = Enum.HorizontalAlignment.Center,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+						Padding = UDim.new(0, px(spacing.XXl)),
+					}),
+				}
+				for index, unitType in productionUnits do
+					children[unitType] = unitCard(unitType, index, queueFull, function()
+						props.onQueueUnit(unitType)
+					end)
+				end
+				return React.createElement("Frame", {
+					LayoutOrder = 1,
+					AutomaticSize = Enum.AutomaticSize.XY,
+					BackgroundTransparency = transparency.Clear,
+				}, children)
+			end)(),
 		}),
 		Queue = React.createElement("Frame", {
 			LayoutOrder = 3,
@@ -241,7 +257,7 @@ local function BuildingMenu(props)
 	local hp = if typeof(props.hp) == "number" then props.hp else 0
 	local maxHp = if typeof(props.maxHp) == "number" and props.maxHp > 0 then props.maxHp else 1
 	local healthText = `{math.floor(hp)} / {math.floor(maxHp)}`
-	local isBarracks = buildingType == "Cuartel"
+	local productionUnits = BuildingConfig.GetProductionUnits(buildingType)
 
 	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -290,9 +306,9 @@ local function BuildingMenu(props)
 				Close = actionButton("CERRAR", 3, colors.Stroke, true, props.onClose),
 			}),
 			Barracks = barracksPanel({
-				isBarracks = isBarracks,
 				canEdit = canEdit,
 				queue = props.queue,
+				productionUnits = productionUnits,
 				onQueueUnit = props.onQueueUnit,
 			}),
 		},

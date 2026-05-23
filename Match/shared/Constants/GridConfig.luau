@@ -24,6 +24,8 @@ local GridConfig = {
 	},
 
 	BuildableHexTag = "BuildableHex",
+	GeneralBuildingHexTag = "GeneralBuildingHex",
+	SpecialBuildingHexTag = "SpecialBuildingHex",
 	AutoOptimizeHexParts = true,
 
 	HexPartDefaults = {

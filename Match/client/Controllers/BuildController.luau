@@ -120,6 +120,9 @@ end
 
 local function getBuildingModelSource(buildingType: string, definition): Model?
 	local source = resolvePath(definition.Path)
+	if source == nil and definition.ModelFallbackPath ~= nil then
+		source = resolvePath(definition.ModelFallbackPath)
+	end
 	if source == nil then
 		warn(("[BuildController] Missing model path for %s: %s"):format(buildingType, tostring(definition.Path)))
 		return nil
@@ -268,7 +271,7 @@ function BuildController:SetSelectedBuildingType(buildingType: string?)
 	end
 
 	local definition = BuildingConfig.Buildings[normalized]
-	if definition == nil or getBuildingModelSource(normalized, definition) == nil then
+	if definition == nil or definition.Enabled ~= true or getBuildingModelSource(normalized, definition) == nil then
 		self:CancelPlacement()
 		return
 	end
@@ -855,6 +858,10 @@ function BuildController:_validateLocalPlacement(
 	definition,
 	target: BuildTarget
 ): (boolean, string)
+	if definition.Enabled ~= true then
+		return false, "BuildingDisabled"
+	end
+
 	local terrainType = target.hexPart:GetAttribute("TerrainType")
 	if typeof(terrainType) ~= "string" or terrainType == "" then
 		terrainType = GridConfig.DefaultTerrainType
@@ -868,6 +875,12 @@ function BuildController:_validateLocalPlacement(
 	if requiredHexTag ~= nil then
 		if not CollectionService:HasTag(target.hexPart, requiredHexTag) then
 			return false, "RequiredTagMissing"
+		end
+		if
+			requiredHexTag == BuildingConfig.HexTags.General
+			and CollectionService:HasTag(target.hexPart, BuildingConfig.HexTags.Special)
+		then
+			return false, "ExclusiveBuildingHex"
 		end
 	else
 		for _, otherDef in BuildingConfig.Buildings do
