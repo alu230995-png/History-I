@@ -189,6 +189,7 @@ function BuildController:KnitInit()
 	self._rotation = 0
 	self._target = nil
 	self._lastTouchPosition = nil
+	self._lastMousePosition = nil
 	self._lastMapPointerPosition = nil
 	self._manualEdgeSocketName = nil
 	self._manualEdgeTarget = nil
@@ -491,6 +492,7 @@ function BuildController:_setPlayerState(state: string?)
 		self._movingBuildingId = nil
 		self._target = nil
 		self._lastTouchPosition = nil
+		self._lastMousePosition = nil
 		self._lastMapPointerPosition = nil
 		self._manualEdgeSocketName = nil
 		self._manualEdgeTarget = nil
@@ -522,6 +524,7 @@ function BuildController:_setBuildingModeActive(isActive: boolean)
 		self._movingBuilding = nil
 		self._movingBuildingId = nil
 		self._lastTouchPosition = nil
+		self._lastMousePosition = nil
 		self._lastMapPointerPosition = nil
 		self._target = nil
 		self:_destroyShadow()
@@ -564,6 +567,7 @@ function BuildController:_bindBuildingInputs(trove)
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			local mousePosition = UserInputService:GetMouseLocation()
+			self._lastMousePosition = mousePosition
 			if self:_isPointerOverBuildUi(mousePosition) then
 				return
 			end
@@ -588,13 +592,22 @@ function BuildController:_bindBuildingInputs(trove)
 	end))
 
 	trove:Add(UserInputService.InputChanged:Connect(function(input: InputObject, _gameProcessedEvent: boolean)
-		if input.UserInputType == Enum.UserInputType.Touch then
-			local touchPosition = Vector2.new(input.Position.X, input.Position.Y)
-			if self:_isPointerOverBuildUi(touchPosition) then
+		if
+			input.UserInputType == Enum.UserInputType.Touch
+			or input.UserInputType == Enum.UserInputType.MouseMovement
+		then
+			local pointerPosition = if input.UserInputType == Enum.UserInputType.Touch
+				then Vector2.new(input.Position.X, input.Position.Y)
+				else UserInputService:GetMouseLocation()
+			if self:_isPointerOverBuildUi(pointerPosition) then
 				return
 			end
 
-			self._lastTouchPosition = touchPosition
+			if input.UserInputType == Enum.UserInputType.Touch then
+				self._lastTouchPosition = pointerPosition
+			else
+				self._lastMousePosition = pointerPosition
+			end
 		end
 	end))
 
@@ -679,6 +692,10 @@ end
 function BuildController:_getPointerPosition(): Vector2?
 	if self._lastTouchPosition ~= nil then
 		return self._lastTouchPosition
+	end
+
+	if self._lastMousePosition ~= nil then
+		return self._lastMousePosition
 	end
 
 	local mouseLocation = UserInputService:GetMouseLocation()

@@ -9,10 +9,26 @@ local NexoData = require(script.Parent:WaitForChild("data"))
 local px = UITheme.sp
 local colors = UITheme.Colors
 
-local function actionButton(label: string, layoutOrder: number, accent: Color3, enabled: boolean, activated)
+local function getViewportSize(props): Vector2
+	local viewportSize = props.viewportSize
+	return if typeof(viewportSize) == "Vector2"
+			and viewportSize.X > 0
+			and viewportSize.Y > 0
+		then viewportSize
+		else Vector2.new(1280, 720)
+end
+
+local function actionButton(
+	label: string,
+	layoutOrder: number,
+	accent: Color3,
+	enabled: boolean,
+	activated,
+	compact: boolean
+)
 	return React.createElement("TextButton", {
 		LayoutOrder = layoutOrder,
-		Size = UDim2.fromOffset(px(168), px(46)),
+		Size = if compact then UDim2.new(1, 0, 0, px(44)) else UDim2.fromOffset(px(168), px(46)),
 		BackgroundColor3 = if enabled then colors.PanelRaised else Color3.fromRGB(39, 42, 42),
 		BorderSizePixel = 0,
 		AutoButtonColor = enabled,
@@ -41,6 +57,9 @@ local function NexoSelectionMenu(props)
 	end
 
 	local nexo = NexoData.getNexoData(props.nexoId, props.snapshot, props.localUserId)
+	local viewportSize = getViewportSize(props)
+	local compact = props.isMobile == true or viewportSize.X <= 720 or viewportSize.Y <= 520
+	local panelMaxWidth = if compact then math.max(px(288), math.min(px(360), viewportSize.X - px(24))) else px(420)
 
 	return React.createElement("Frame", {
 		Size = UDim2.fromScale(1, 1),
@@ -52,11 +71,15 @@ local function NexoSelectionMenu(props)
 		Panel = React.createElement("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(px(420), px(242)),
+			Size = if compact then UDim2.new(1, -px(24), 0, 0) else UDim2.fromOffset(px(420), px(242)),
+			AutomaticSize = if compact then Enum.AutomaticSize.Y else Enum.AutomaticSize.None,
 			BackgroundColor3 = colors.Panel,
 			BackgroundTransparency = 0.02,
 			BorderSizePixel = 0,
 		}, {
+			SizeLimit = React.createElement("UISizeConstraint", {
+				MaxSize = Vector2.new(panelMaxWidth, viewportSize.Y - px(32)),
+			}),
 			Corner = React.createElement("UICorner", {
 				CornerRadius = UDim.new(0, px(4)),
 			}),
@@ -114,17 +137,18 @@ local function NexoSelectionMenu(props)
 			Buttons = React.createElement("Frame", {
 				LayoutOrder = 4,
 				AutomaticSize = Enum.AutomaticSize.XY,
+				Size = if compact then UDim2.fromScale(1, 0) else UDim2.fromScale(0, 0),
 				BackgroundTransparency = 1,
 			}, {
 				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Horizontal,
+					FillDirection = if compact then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal,
 					HorizontalAlignment = Enum.HorizontalAlignment.Left,
 					VerticalAlignment = Enum.VerticalAlignment.Center,
 					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, px(10)),
+					Padding = UDim.new(0, if compact then px(8) else px(10)),
 				}),
-				Select = actionButton("SELECCIONAR NEXO", 1, colors.Green, nexo.canSelect, props.onSelect),
-				Close = actionButton("CERRAR", 2, colors.Red, true, props.onClose),
+				Select = actionButton("SELECCIONAR NEXO", 1, colors.Green, nexo.canSelect, props.onSelect, compact),
+				Close = actionButton("CERRAR", 2, colors.Red, true, props.onClose, compact),
 			}),
 		}),
 	})

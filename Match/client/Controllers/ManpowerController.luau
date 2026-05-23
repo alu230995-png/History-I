@@ -1,73 +1,28 @@
 local CollectionService = game:GetService("CollectionService")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
 local Knit = require(Packages:WaitForChild("Knit"))
-local React = require(Packages:WaitForChild("React"))
-local ReactRoblox = require(Packages:WaitForChild("ReactRoblox"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
-local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
 local WeaponConfig = require(Shared:WaitForChild("Constants"):WaitForChild("WeaponConfig"))
 local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
 local TropaCollisionGroups = require(Shared:WaitForChild("Utils"):WaitForChild("TropaCollisionGroups"))
 
-local UnitSelectionBar =
-	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("UnitSelectionBar"):WaitForChild("index"))
-local WorldInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("WorldInput"))
-
 local ManpowerController = Knit.CreateController({
 	Name = "ManpowerController",
 })
 
-local LOCAL_PLAYER = Players.LocalPlayer
-local MAX_RAY_DISTANCE = 500
 local MIN_FACING_MAGNITUDE = 0.001
 local ZERO_VECTOR = Vector3.zero
 local DEFAULT_VISUAL_MOTION = ManpowerConfig.VisualMotion
-
-local function canCommandUnits(playerState: string?): boolean
-	return playerState == PlayerStates.Playing
-end
-
-local function findUnitModel(instance: Instance?, unitFolder: Folder?): Model?
-	local current = instance
-
-	while current ~= nil and current ~= Workspace do
-		if current:IsA("Model") and current:GetAttribute("UnitId") ~= nil then
-			if unitFolder == nil or current:IsDescendantOf(unitFolder) then
-				return current
-			end
-		end
-
-		current = current.Parent
-	end
-
-	return nil
-end
-
-local function findHexPart(instance: Instance?): BasePart?
-	local current = instance
-
-	while current ~= nil and current ~= Workspace do
-		if current:IsA("BasePart") and CollectionService:HasTag(current, GridConfig.BuildableHexTag) then
-			return current
-		end
-
-		current = current.Parent
-	end
-
-	return nil
-end
 
 local function splitPath(path: string): { string }
 	local parts = {}
@@ -301,9 +256,6 @@ function ManpowerController:KnitInit()
 	self._camera = Workspace.CurrentCamera
 	self._unitFolder = nil
 	self._manpowerService = nil
-	self._gameService = nil
-	self._playerState = nil
-	self._isBuildingMode = false
 	self._visualById = {}
 	self._visualByNetId = {}
 	self._gridByPart = {}
@@ -316,7 +268,6 @@ end
 
 function ManpowerController:KnitStart()
 	self._manpowerService = Knit.GetService("ManpowerService")
-	self._gameService = Knit.GetService("GameService")
 	self:_mountUnitFolder()
 	self:_rebuildHexCache()
 
@@ -325,9 +276,6 @@ function ManpowerController:KnitStart()
 	end))
 	self._trove:Add(CollectionService:GetInstanceRemovedSignal(GridConfig.BuildableHexTag):Connect(function(instance)
 		self:_removeHex(instance)
-	end))
-	self._trove:Add(self._gameService.PlayerStateChanged:Connect(function(_oldState: string, newState: string)
-		self:_setPlayerState(newState)
 	end))
 	self._trove:Add(self._manpowerService.UnitSpawned:Connect(function(payload)
 		self:_spawnVisual(payload)
@@ -350,18 +298,6 @@ function ManpowerController:KnitStart()
 			self:_spawnVisual(snapshot.Units[index])
 		end
 	end
-
-	local state = self._gameService:GetPlayerState()
-	self:_setPlayerState(state)
-end
-
-function ManpowerController:_setPlayerState(state: string?)
-	self._playerState = state
-	self._isBuildingMode = state == PlayerStates.Building
-
-	if not canCommandUnits(state) then
-		self:_clearSelection()
-	end
 end
 
 function ManpowerController:_mountUnitFolder()
@@ -370,32 +306,6 @@ function ManpowerController:_mountUnitFolder()
 	unitFolder.Parent = Workspace
 	self._unitFolder = unitFolder
 	self._trove:Add(unitFolder)
-	self._trove:Add(unitFolder.ChildRemoved:Connect(function(child)
-		local unitId = child:GetAttribute("UnitId")
-		if typeof(unitId) == "string" then
-			self:_deselectUnit(unitId)
-		end
-	end))
-end
-
-function ManpowerController:_mountUi()
-	local playerGui = LOCAL_PLAYER:WaitForChild("PlayerGui")
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "UnitSelectionGui"
-	screenGui.IgnoreGuiInset = true
-	screenGui.ResetOnSpawn = false
-	screenGui.DisplayOrder = 34
-	screenGui.Parent = playerGui
-	self._screenGui = screenGui
-	self._trove:Add(screenGui)
-
-	local root = ReactRoblox.createRoot(screenGui)
-	self._root = root
-	self._trove:Add(function()
-		root:unmount()
-	end)
-
-	self:_render()
 end
 
 function ManpowerController:_rebuildHexCache()

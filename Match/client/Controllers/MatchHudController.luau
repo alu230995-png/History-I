@@ -1,5 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Packages = ReplicatedStorage:WaitForChild("Packages")
 
@@ -32,6 +34,8 @@ function MatchHudController:KnitInit()
 	self._thumbnailByUserId = {}
 	self._root = nil
 	self._screenGui = nil
+	self._camera = Workspace.CurrentCamera
+	self._lastViewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
 end
 
 function MatchHudController:KnitStart()
@@ -69,6 +73,18 @@ function MatchHudController:KnitStart()
 	end))
 	self._trove:Add(Players.PlayerRemoving:Connect(function()
 		self:_refreshPlayerCards()
+	end))
+	self._trove:Add(Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		self._camera = Workspace.CurrentCamera
+		self._lastViewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
+		self:_render()
+	end))
+	self._trove:Add(RunService.RenderStepped:Connect(function()
+		local viewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
+		if viewportSize ~= self._lastViewportSize then
+			self._lastViewportSize = viewportSize
+			self:_render()
+		end
 	end))
 end
 
@@ -134,6 +150,7 @@ function MatchHudController:_render()
 		diplomacySnapshot = self._diplomacySnapshot,
 		playerCards = self._playerCards,
 		localUserId = LOCAL_PLAYER.UserId,
+		viewportSize = self._lastViewportSize,
 	}))
 end
 

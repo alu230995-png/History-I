@@ -16,6 +16,7 @@ local ArmyPhaseConfig = require(Shared:WaitForChild("Constants"):WaitForChild("A
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
+local SelectionConfig = require(Shared:WaitForChild("Constants"):WaitForChild("SelectionConfig"))
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
 local TropaTerrestre = require(script.Parent.Parent:WaitForChild("Classes"):WaitForChild("TropaTerrestre"))
 
@@ -104,7 +105,7 @@ local ManpowerService = Knit.CreateService({
 })
 
 local MIN_REQUEST_INTERVAL = 0.12
-local MAX_COMMAND_UNITS = 64
+local MAX_COMMAND_UNITS = SelectionConfig.MaxSelectedUnits
 local REQUEST_NAMES = table.freeze({
 	Queue = "Queue",
 	Move = "Move",
@@ -748,6 +749,11 @@ function ManpowerService:_trySpawnQueueHead(queue: BarracksQueue, entry: QueueEn
 		return true
 	end
 
+	local resources = self._resourceService:GetSnapshot(queue.Owner)
+	if resources.PopulationUsed > resources.PopulationCap then
+		return false
+	end
+
 	local spawnHex, spawnSlot = self:_findBarracksSpawnSlot(buildingRecord.HexPart)
 	if spawnHex == nil or spawnSlot == nil then
 		return false
@@ -1233,7 +1239,10 @@ function ManpowerService:_canHexesConnect(fromHex: HexRecord, toHex: HexRecord):
 		return false
 	end
 
-	if CollectionService:HasTag(fromHex.Part, GridConfig.BlockedHexTag or "BlockedHex") or CollectionService:HasTag(toHex.Part, GridConfig.BlockedHexTag or "BlockedHex") then
+	if
+		CollectionService:HasTag(fromHex.Part, GridConfig.BlockedHexTag or "BlockedHex")
+		or CollectionService:HasTag(toHex.Part, GridConfig.BlockedHexTag or "BlockedHex")
+	then
 		return false
 	end
 

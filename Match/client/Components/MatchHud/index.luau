@@ -8,6 +8,15 @@ local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForCh
 local px = UITheme.sp
 local colors = UITheme.Colors
 
+local function getViewportSize(props): Vector2
+	local viewportSize = props.viewportSize
+	return if typeof(viewportSize) == "Vector2"
+			and viewportSize.X > 0
+			and viewportSize.Y > 0
+		then viewportSize
+		else Vector2.new(1280, 720)
+end
+
 local function getResourceNumber(resources, key: string): number
 	local value = if resources ~= nil then resources[key] else nil
 	return if typeof(value) == "number" then math.floor(value) else 0
@@ -50,7 +59,7 @@ local function getHealthAccent(ratio: number): Color3
 	return colors.Green
 end
 
-local function stat(label: string, value: string, accent: Color3, layoutOrder: number)
+local function stat(label: string, value: string, accent: Color3, layoutOrder: number, compact: boolean?)
 	return React.createElement("Frame", {
 		LayoutOrder = layoutOrder,
 		AutomaticSize = Enum.AutomaticSize.XY,
@@ -68,10 +77,10 @@ local function stat(label: string, value: string, accent: Color3, layoutOrder: n
 			Transparency = 0.18,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(6)),
-			PaddingBottom = UDim.new(0, px(6)),
-			PaddingLeft = UDim.new(0, px(9)),
-			PaddingRight = UDim.new(0, px(9)),
+			PaddingTop = UDim.new(0, if compact then px(4) else px(6)),
+			PaddingBottom = UDim.new(0, if compact then px(4) else px(6)),
+			PaddingLeft = UDim.new(0, if compact then px(7) else px(9)),
+			PaddingRight = UDim.new(0, if compact then px(7) else px(9)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
@@ -85,7 +94,7 @@ local function stat(label: string, value: string, accent: Color3, layoutOrder: n
 			Font = Enum.Font.GothamBold,
 			Text = label,
 			TextColor3 = colors.MutedText,
-			TextSize = px(10),
+			TextSize = if compact then px(8) else px(10),
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 		Value = React.createElement("TextLabel", {
@@ -95,13 +104,13 @@ local function stat(label: string, value: string, accent: Color3, layoutOrder: n
 			Font = Enum.Font.Code,
 			Text = value,
 			TextColor3 = colors.Text,
-			TextSize = px(16),
+			TextSize = if compact then px(12) else px(16),
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 	})
 end
 
-local function nexoHealth(nexo, layoutOrder: number)
+local function nexoHealth(nexo, layoutOrder: number, compact: boolean?)
 	if nexo == nil then
 		return nil
 	end
@@ -131,10 +140,10 @@ local function nexoHealth(nexo, layoutOrder: number)
 			Transparency = 0.18,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(6)),
-			PaddingBottom = UDim.new(0, px(7)),
-			PaddingLeft = UDim.new(0, px(9)),
-			PaddingRight = UDim.new(0, px(9)),
+			PaddingTop = UDim.new(0, if compact then px(4) else px(6)),
+			PaddingBottom = UDim.new(0, if compact then px(5) else px(7)),
+			PaddingLeft = UDim.new(0, if compact then px(7) else px(9)),
+			PaddingRight = UDim.new(0, if compact then px(7) else px(9)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
@@ -148,7 +157,7 @@ local function nexoHealth(nexo, layoutOrder: number)
 			Font = Enum.Font.GothamBold,
 			Text = string.upper(displayName),
 			TextColor3 = colors.MutedText,
-			TextSize = px(10),
+			TextSize = if compact then px(8) else px(10),
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 		Value = React.createElement("TextLabel", {
@@ -158,7 +167,7 @@ local function nexoHealth(nexo, layoutOrder: number)
 			Font = Enum.Font.Code,
 			Text = `{hp} / {maxHp}`,
 			TextColor3 = colors.Text,
-			TextSize = px(14),
+			TextSize = if compact then px(11) else px(14),
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 		Track = React.createElement("Frame", {
@@ -218,13 +227,13 @@ local function getRosterColor(snapshot, userId: number): Color3
 	return palette[((colorIndex - 1) % paletteCount) + 1]
 end
 
-local function playerPip(playerCard, diplomacySnapshot, layoutOrder: number)
+local function playerPip(playerCard, diplomacySnapshot, layoutOrder: number, compact: boolean?)
 	local accent = getRosterColor(diplomacySnapshot, playerCard.userId)
 	local image = if typeof(playerCard.thumbnail) == "string" then playerCard.thumbnail else ""
 
 	return React.createElement("Frame", {
 		LayoutOrder = layoutOrder,
-		Size = UDim2.fromOffset(px(38), px(38)),
+		Size = if compact then UDim2.fromOffset(px(30), px(30)) else UDim2.fromOffset(px(38), px(38)),
 		BackgroundColor3 = colors.PanelRaised,
 		BorderSizePixel = 0,
 	}, {
@@ -239,7 +248,7 @@ local function playerPip(playerCard, diplomacySnapshot, layoutOrder: number)
 		Face = React.createElement("ImageLabel", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(px(32), px(32)),
+			Size = if compact then UDim2.fromOffset(px(25), px(25)) else UDim2.fromOffset(px(32), px(32)),
 			BackgroundTransparency = 1,
 			Image = image,
 			ImageColor3 = colors.Text,
@@ -252,24 +261,25 @@ local function playerPip(playerCard, diplomacySnapshot, layoutOrder: number)
 end
 
 local function topRoster(props)
+	local compact = props.compact == true
 	local children = {
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(8)),
+			Padding = UDim.new(0, if compact then px(5) else px(8)),
 		}),
 	}
 
 	local playerCards = if type(props.playerCards) == "table" then props.playerCards else {}
 	for index = 1, #playerCards do
-		children[`Player{index}`] = playerPip(playerCards[index], props.diplomacySnapshot, index)
+		children[`Player{index}`] = playerPip(playerCards[index], props.diplomacySnapshot, index, compact)
 	end
 
 	return React.createElement("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, px(12)),
+		Position = UDim2.new(0.5, 0, 0, if compact then px(6) else px(12)),
 		AutomaticSize = Enum.AutomaticSize.XY,
 		BackgroundColor3 = colors.Panel,
 		BackgroundTransparency = 0.08,
@@ -285,16 +295,16 @@ local function topRoster(props)
 			Transparency = 0.12,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(7)),
-			PaddingBottom = UDim.new(0, px(7)),
-			PaddingLeft = UDim.new(0, px(10)),
-			PaddingRight = UDim.new(0, px(10)),
+			PaddingTop = UDim.new(0, if compact then px(5) else px(7)),
+			PaddingBottom = UDim.new(0, if compact then px(5) else px(7)),
+			PaddingLeft = UDim.new(0, if compact then px(7) else px(10)),
+			PaddingRight = UDim.new(0, if compact then px(7) else px(10)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(5)),
+			Padding = UDim.new(0, if compact then px(3) else px(5)),
 		}),
 		Clock = React.createElement("TextLabel", {
 			LayoutOrder = 1,
@@ -303,7 +313,7 @@ local function topRoster(props)
 			Font = Enum.Font.Code,
 			Text = formatDate(props.clock),
 			TextColor3 = colors.Amber,
-			TextSize = px(16),
+			TextSize = if compact then px(12) else px(16),
 		}),
 		Score = React.createElement("TextLabel", {
 			LayoutOrder = 2,
@@ -312,7 +322,7 @@ local function topRoster(props)
 			Font = Enum.Font.GothamBold,
 			Text = "3VS3",
 			TextColor3 = colors.Text,
-			TextSize = px(12),
+			TextSize = if compact then px(10) else px(12),
 		}),
 		Roster = React.createElement("Frame", {
 			LayoutOrder = 3,
@@ -323,6 +333,8 @@ local function topRoster(props)
 end
 
 local function MatchHud(props)
+	local viewportSize = getViewportSize(props)
+	local compact = viewportSize.X <= 720 or viewportSize.Y <= 520
 	local resources = props.resources
 	local gold = getResourceNumber(resources, "Gold")
 	local populationUsed = getResourceNumber(resources, "PopulationUsed")
@@ -331,7 +343,7 @@ local function MatchHud(props)
 
 	local leftPanel = React.createElement("Frame", {
 		AnchorPoint = Vector2.new(0, 0),
-		Position = UDim2.fromOffset(px(12), px(64)),
+		Position = if compact then UDim2.fromOffset(px(8), px(48)) else UDim2.fromOffset(px(12), px(64)),
 		AutomaticSize = Enum.AutomaticSize.XY,
 		BackgroundColor3 = colors.Panel,
 		BackgroundTransparency = 0.12,
@@ -339,8 +351,8 @@ local function MatchHud(props)
 		Active = false,
 	}, {
 		Width = React.createElement("UISizeConstraint", {
-			MinSize = Vector2.new(px(154), px(0)),
-			MaxSize = Vector2.new(px(280), px(320)),
+			MinSize = if compact then Vector2.new(px(126), px(0)) else Vector2.new(px(154), px(0)),
+			MaxSize = if compact then Vector2.new(px(164), px(230)) else Vector2.new(px(280), px(320)),
 		}),
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UDim.new(0, px(4)),
@@ -351,20 +363,20 @@ local function MatchHud(props)
 			Transparency = 0.08,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, px(8)),
-			PaddingBottom = UDim.new(0, px(8)),
-			PaddingLeft = UDim.new(0, px(8)),
-			PaddingRight = UDim.new(0, px(8)),
+			PaddingTop = UDim.new(0, if compact then px(6) else px(8)),
+			PaddingBottom = UDim.new(0, if compact then px(6) else px(8)),
+			PaddingLeft = UDim.new(0, if compact then px(6) else px(8)),
+			PaddingRight = UDim.new(0, if compact then px(6) else px(8)),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, px(6)),
+			Padding = UDim.new(0, if compact then px(4) else px(6)),
 		}),
-		Money = stat("DINERO", tostring(gold), colors.Amber, 1),
-		Population = stat("POBLACION", `{populationUsed} / {populationCap}`, colors.Green, 2),
-		Date = stat("FECHA", formatDate(props.clock), colors.Stroke, 3),
-		Nexo = nexoHealth(localNexo, 4),
+		Money = stat("DINERO", tostring(gold), colors.Amber, 1, compact),
+		Population = stat("POBLACION", `{populationUsed} / {populationCap}`, colors.Green, 2, compact),
+		Date = stat("FECHA", formatDate(props.clock), colors.Stroke, 3, compact),
+		Nexo = nexoHealth(localNexo, 4, compact),
 	})
 
 	return React.createElement("Frame", {
@@ -373,7 +385,12 @@ local function MatchHud(props)
 		BorderSizePixel = 0,
 		Active = false,
 	}, {
-		TopRoster = topRoster(props),
+		TopRoster = topRoster({
+			clock = props.clock,
+			playerCards = props.playerCards,
+			diplomacySnapshot = props.diplomacySnapshot,
+			compact = compact,
+		}),
 		LeftPanel = leftPanel,
 	})
 end

@@ -153,6 +153,7 @@ function NexoService:KnitInit()
 	self._phaseActive = false
 	self._phaseToken = 0
 	self._selectionStarted = false
+	self._discoveryInProgress = false
 	self._random = Random.new()
 	self._buildService = nil
 	self._gameService = nil
@@ -176,11 +177,11 @@ function NexoService:KnitStart()
 
 	self._trove:Add(Players.PlayerAdded:Connect(function()
 		task.defer(function()
-			if self._destroyed or self._selectionStarted or #self._nexoOrder <= 0 then
+			if self._destroyed or self._selectionStarted then
 				return
 			end
 
-			self:StartNexoSelection()
+			self:_discoverAndStartSelection()
 		end)
 	end))
 
@@ -190,7 +191,44 @@ function NexoService:KnitStart()
 			return
 		end
 
-		self:DiscoverNexos()
+		self:_discoverAndStartSelection()
+	end)
+end
+
+function NexoService:_discoverAndStartSelection()
+	if self._destroyed or self._selectionStarted or self._discoveryInProgress then
+		return
+	end
+
+	self._discoveryInProgress = true
+	local minimumNexos = NexoConfig.MinimumSelectionNexos or 1
+	local maxAttempts = NexoConfig.DiscoveryMaxAttempts or 1
+	local retryDelay = NexoConfig.DiscoveryRetryDelaySeconds or 0.25
+
+	task.spawn(function()
+		for attempt = 1, maxAttempts do
+			if self._destroyed or self._selectionStarted then
+				self._discoveryInProgress = false
+				return
+			end
+
+			self:DiscoverNexos()
+			if #self._nexoOrder >= minimumNexos or attempt >= maxAttempts then
+				break
+			end
+
+			warn(
+				("[NexoService] Waiting for Nexos before selection (%d/%d found, attempt %d/%d)"):format(
+					#self._nexoOrder,
+					minimumNexos,
+					attempt,
+					maxAttempts
+				)
+			)
+			task.wait(retryDelay)
+		end
+
+		self._discoveryInProgress = false
 		self:StartNexoSelection()
 	end)
 end
@@ -294,6 +332,16 @@ function NexoService:StartNexoSelection(): boolean
 	if #self._nexoOrder <= 0 then
 		warn("[NexoService] NexoSelection not started because no Nexos were found")
 		return false
+	end
+
+	local minimumNexos = NexoConfig.MinimumSelectionNexos or 1
+	if #self._nexoOrder < minimumNexos then
+		warn(
+			("[NexoService] Starting NexoSelection with only %d/%d expected Nexos found"):format(
+				#self._nexoOrder,
+				minimumNexos
+			)
+		)
 	end
 
 	if
