@@ -36,6 +36,10 @@ local LOCAL_PLAYER = Players.LocalPlayer
 local MAX_RAY_DISTANCE = 500
 local SHADOW_MATERIAL = Enum.Material.ForceField
 
+local function isDefeatedState(state: string?): boolean
+	return state == PlayerStates.Defeated or state == PlayerStates.Spectating
+end
+
 local function findTaggedHexPart(instance: Instance?): BasePart?
 	local current = instance
 
@@ -177,6 +181,7 @@ function BuildController:KnitInit()
 	self._camera = Workspace.CurrentCamera
 	self._buildService = nil
 	self._gameService = nil
+	self._playerState = nil
 	self._isBuildingMode = false
 	self._selectedBuildingType = nil
 	self._movingBuilding = nil
@@ -238,14 +243,18 @@ function BuildController:KnitStart()
 	end))
 
 	self._trove:Add(self._gameService.PlayerStateChanged:Connect(function(_oldState: string, newState: string)
-		self:_setBuildingModeActive(newState == PlayerStates.Building)
+		self:_setPlayerState(newState)
 	end))
 
 	local state = self._gameService:GetPlayerState()
-	self:_setBuildingModeActive(state == PlayerStates.Building)
+	self:_setPlayerState(state)
 end
 
 function BuildController:SetSelectedBuildingType(buildingType: string?)
+	if isDefeatedState(self._playerState) then
+		return
+	end
+
 	if buildingType == nil then
 		self:CancelPlacement()
 		return
@@ -296,6 +305,10 @@ function BuildController:SetSelectedBuildingType(buildingType: string?)
 end
 
 function BuildController:StartMovingBuilding(building: Model?): { ok: boolean, reason: string? }
+	if isDefeatedState(self._playerState) then
+		return { ok = false, reason = "Defeated" }
+	end
+
 	if typeof(building) ~= "Instance" or not building:IsA("Model") then
 		return { ok = false, reason = "InvalidBuilding" }
 	end
@@ -401,6 +414,10 @@ function BuildController:GetCurrentTarget(): BuildTarget?
 end
 
 function BuildController:RequestBuildAtCurrentTarget(): { ok: boolean, reason: string? }
+	if isDefeatedState(self._playerState) then
+		return { ok = false, reason = "Defeated" }
+	end
+
 	if self._selectedBuildingType == nil or self._target == nil or self._buildService == nil then
 		return { ok = false, reason = "NoTarget" }
 	end
@@ -465,6 +482,29 @@ function BuildController:_mountUi()
 	self:_renderBuildUi(true)
 end
 
+function BuildController:_setPlayerState(state: string?)
+	self._playerState = state
+
+	if isDefeatedState(state) then
+		self._selectedBuildingType = nil
+		self._movingBuilding = nil
+		self._movingBuildingId = nil
+		self._target = nil
+		self._lastTouchPosition = nil
+		self._lastMapPointerPosition = nil
+		self._manualEdgeSocketName = nil
+		self._manualEdgeTarget = nil
+		self._previewValid = false
+		self._previewReason = "Defeated"
+		self:_setBuildingModeActive(false)
+		self:_destroyShadow()
+		self:_renderBuildUi()
+		return
+	end
+
+	self:_setBuildingModeActive(state == PlayerStates.Building)
+end
+
 function BuildController:_setBuildingModeActive(isActive: boolean)
 	if self._isBuildingMode == isActive then
 		return
@@ -473,7 +513,7 @@ function BuildController:_setBuildingModeActive(isActive: boolean)
 	self._isBuildingMode = isActive
 
 	if self._buildingModeTrove ~= nil then
-		self._buildingModeTrove:Destroy()
+		self._trove:Remove(self._buildingModeTrove)
 		self._buildingModeTrove = nil
 	end
 
@@ -499,12 +539,16 @@ end
 
 function BuildController:_bindBuildingInputs(trove)
 	trove:Add(RunService.RenderStepped:Connect(function()
+		if isDefeatedState(self._playerState) then
+			return
+		end
+
 		self:_updateTarget()
 		self:_updatePreview()
 	end))
 
 	trove:Add(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessedEvent: boolean)
-		if gameProcessedEvent then
+		if gameProcessedEvent or isDefeatedState(self._playerState) then
 			return
 		end
 
@@ -797,6 +841,23 @@ function BuildController:_validateLocalPlacement(
 	local terrainType = target.hexPart:GetAttribute("TerrainType")
 	if typeof(terrainType) ~= "string" or terrainType == "" then
 		terrainType = GridConfig.DefaultTerrainType
+	end
+
+	if CollectionService:HasTag(target.hexPart, GridConfig.BlockedHexTag or "BlockedHex") then
+		return false, "BlockedHex"
+	end
+
+	local requiredHexTag = definition.RequiredHexTag
+	if requiredHexTag ~= nil then
+		if not CollectionService:HasTag(target.hexPart, requiredHexTag) then
+			return false, "RequiredTagMissing"
+		end
+	else
+		for _, otherDef in BuildingConfig.Buildings do
+			if otherDef.RequiredHexTag ~= nil and CollectionService:HasTag(target.hexPart, otherDef.RequiredHexTag) then
+				return false, "ExclusiveBuildingHex"
+			end
+		end
 	end
 
 	if not GridConfig.BuildableTerrains[terrainType] then

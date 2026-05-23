@@ -36,6 +36,7 @@ local GridConfig = {
 
 	MaxWallsPerHex = 6,
 	MaxBuildingsPerHex = 1,
+	BlockedHexTag = "BlockedHex",
 }
 
 return table.freeze(GridConfig)

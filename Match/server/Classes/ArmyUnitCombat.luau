@@ -3,6 +3,21 @@ ArmyUnitCombat.__index = ArmyUnitCombat
 
 local MIN_AIM_DISTANCE = 0.001
 
+local function getTargetPriorityRank(weapon, target): number
+	local priority = if type(weapon) == "table" then weapon.TargetPriority else nil
+	if type(priority) ~= "table" or target == nil then
+		return 1
+	end
+
+	for index = 1, #priority do
+		if priority[index] == target.Kind then
+			return index
+		end
+	end
+
+	return math.huge
+end
+
 function ArmyUnitCombat.new(unit, weapon, muzzleOffset: Vector3, manpowerService, targetingService, projectileService)
 	local self = setmetatable({}, ArmyUnitCombat)
 
@@ -35,30 +50,33 @@ function ArmyUnitCombat:Step(now: number)
 	local target = self._target
 	local targetPosition = nil
 	if target ~= nil then
-		targetPosition = self._targetingService:ValidateTarget(
-			target,
-			unit.Owner.UserId,
-			unit.Id,
-			position,
-			self._weapon.Range,
-			now
-		)
+		targetPosition =
+			self._targetingService:ValidateTarget(target, unit.Owner.UserId, unit.Id, position, self._weapon.Range, now)
 		if targetPosition == nil then
 			target = nil
 			self._target = nil
 		end
 	end
 
-	if target == nil and now >= self._nextScanAt then
+	if now >= self._nextScanAt then
 		self._nextScanAt = now + self._scanInterval
-		target, targetPosition = self._targetingService:AcquireTarget(
+		local acquiredTarget, acquiredPosition = self._targetingService:AcquireTarget(
 			unit.Owner.UserId,
 			unit.Id,
 			position,
 			self._weapon.Range,
-			now
+			now,
+			self._weapon.TargetPriority
 		)
-		self._target = target
+		if acquiredTarget ~= nil then
+			local currentRank = getTargetPriorityRank(self._weapon, target)
+			local acquiredRank = getTargetPriorityRank(self._weapon, acquiredTarget)
+			if target == nil or acquiredRank <= currentRank then
+				target = acquiredTarget
+				targetPosition = acquiredPosition
+				self._target = acquiredTarget
+			end
+		end
 	end
 
 	if target == nil or targetPosition == nil or now < self._nextShotAt then

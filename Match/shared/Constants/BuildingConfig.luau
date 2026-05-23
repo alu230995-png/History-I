@@ -63,6 +63,7 @@ BuildingConfig.Buildings = table.freeze({
 		RotationLocked = false,
 		Footprint = Vector3.new(5, 5, 5),
 		PivotOffset = Vector3.new(0, 2.5, 0),
+		RequiredHexTag = "LumberHex",
 	}),
 
 	Cuartel = table.freeze({
@@ -203,5 +204,32 @@ function BuildingConfig.CanRotate(buildingType: any): boolean
 	local definition = BuildingConfig.GetBuilding(buildingType)
 	return definition ~= nil and definition.RotationLocked ~= true
 end
+
+BuildingConfig.Nexo = table.freeze({
+	TagKeyword = "Nexo",
+	SelectionDurationSeconds = 10,
+	AssignmentMessageSeconds = 3,
+	HexRaycastHeight = 160,
+	HexRaycastDepth = 420,
+	SelectionRayDistance = 500,
+	ProjectedPickRadiusPixels = 48,
+	RootPartName = "RootPart",
+	HexStateAttribute = "State",
+	HP = 1000,
+	States = table.freeze({
+		Available = "available",
+		Selected = "selected",
+		Taken = "taken",
+	}),
+	BlockReason = "Nexo",
+	AssignedHighlight = table.freeze({
+		FillTransparency = 1,
+		HoverFillTransparency = 0.8,
+		OutlineTransparency = 0.02,
+	}),
+	GetDefaultLore = function(displayName: string): string
+		return `{displayName} mantiene una posicion clave para controlar el frente y sostener la linea de avance.`
+	end,
+})
 
 return table.freeze(BuildingConfig)

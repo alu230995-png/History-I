@@ -16,6 +16,20 @@ local TargetingService = Knit.CreateService({
 local TARGET_KIND = WeaponConfig.TargetKinds
 local MIN_TARGET_RADIUS = 1
 
+local function getPriorityRank(targetKind: string, targetPriority: { string }?): number
+	if targetPriority == nil then
+		return 1
+	end
+
+	for index = 1, #targetPriority do
+		if targetPriority[index] == targetKind then
+			return index
+		end
+	end
+
+	return math.huge
+end
+
 local function getModelRootPart(model: Model): BasePart?
 	return model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
 end
@@ -33,12 +47,14 @@ function TargetingService:KnitInit()
 	self._buildService = nil
 	self._manpowerService = nil
 	self._nexoService = nil
+	self._diplomacyService = nil
 end
 
 function TargetingService:KnitStart()
 	self._buildService = Knit.GetService("BuildService")
 	self._manpowerService = Knit.GetService("ManpowerService")
 	self._nexoService = Knit.GetService("NexoService")
+	self._diplomacyService = Knit.GetService("DiplomacyService")
 
 	self._trove:Add(self._manpowerService.UnitSpawned:Connect(function(unit)
 		self:RegisterUnit(unit)
@@ -194,16 +210,23 @@ function TargetingService:AcquireTarget(
 	sourceUnitId: string,
 	sourcePosition: Vector3,
 	range: number,
-	now: number
+	now: number,
+	targetPriority: { string }?
 ): (any?, Vector3?)
 	local closestTarget = nil
 	local closestPosition = nil
 	local closestDistanceSquared = math.huge
+	local closestPriorityRank = math.huge
 	local rangeSquared = range * range
 	local targets = self._targets
 
 	for index = 1, #targets do
 		local target = targets[index]
+		local priorityRank = getPriorityRank(target.Kind, targetPriority)
+		if priorityRank == math.huge then
+			continue
+		end
+
 		local position = self:_getValidTargetPosition(target, attackerUserId, sourceUnitId, now)
 		if position == nil then
 			continue
@@ -211,10 +234,17 @@ function TargetingService:AcquireTarget(
 
 		local offset = position - sourcePosition
 		local distanceSquared = offset:Dot(offset)
-		if distanceSquared <= rangeSquared and distanceSquared < closestDistanceSquared then
+		if
+			distanceSquared <= rangeSquared
+			and (
+				priorityRank < closestPriorityRank
+				or (priorityRank == closestPriorityRank and distanceSquared < closestDistanceSquared)
+			)
+		then
 			closestTarget = target
 			closestPosition = position
 			closestDistanceSquared = distanceSquared
+			closestPriorityRank = priorityRank
 		end
 	end
 
@@ -294,6 +324,10 @@ function TargetingService:_getValidTargetPosition(
 		or target.OwnerUserId == attackerUserId
 		or target.SourceUnitId == sourceUnitId
 	then
+		return nil
+	end
+
+	if self._diplomacyService ~= nil and not self._diplomacyService:AreHostile(attackerUserId, target.OwnerUserId) then
 		return nil
 	end
 

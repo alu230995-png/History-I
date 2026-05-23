@@ -89,7 +89,11 @@ function MatchResourceService:CanAffordBuilding(
 	return self:_canAfford(player, goldCost, populationCost)
 end
 
-function MatchResourceService:CanAffordUnit(player: Player, goldCost: number, populationCost: number): (boolean, string?)
+function MatchResourceService:CanAffordUnit(
+	player: Player,
+	goldCost: number,
+	populationCost: number
+): (boolean, string?)
 	return self:_canAfford(player, goldCost, populationCost)
 end
 

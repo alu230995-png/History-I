@@ -368,7 +368,7 @@ function GameService:_createControlRigForPlayer(player: Player, playerTrove)
 	head.Transparency = 1
 	head.Anchored = true
 	head.CanCollide = false
-	head.CanQuery = false
+	head.CanQuery = true
 	head.CanTouch = false
 	head.Massless = true
 	head.Parent = rig

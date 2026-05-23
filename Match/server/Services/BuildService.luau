@@ -375,9 +375,17 @@ local function snapshotSockets(sockets: { [string]: SocketState }): { [string]: 
 	return snapshot
 end
 
-local function clearSocketState(socketState: SocketState, destroyTrove: boolean)
+local function clearSocketState(socketState: SocketState, destroyTrove: boolean, parentTrove: any?)
 	if destroyTrove and socketState.Trove ~= nil then
-		socketState.Trove:Destroy()
+		local socketTrove = socketState.Trove
+		if parentTrove ~= nil then
+			local removed = parentTrove:Remove(socketTrove)
+			if not removed then
+				socketTrove:Destroy()
+			end
+		else
+			socketTrove:Destroy()
+		end
 	end
 
 	socketState.Owner = nil
@@ -439,6 +447,7 @@ function BuildService:KnitInit()
 	self._gameService = nil
 	self._nexoService = nil
 	self._resourceService = nil
+	self._territoryService = nil
 	self.BuildingDestroyed = Signal.new()
 	self.BuildingPlaced = Signal.new()
 	self.BuildingMoved = Signal.new()
@@ -458,6 +467,7 @@ function BuildService:KnitStart()
 	self._gameService = Knit.GetService("GameService")
 	self._nexoService = Knit.GetService("NexoService")
 	self._resourceService = Knit.GetService("MatchResourceService")
+	self._territoryService = Knit.GetService("TerritoryService")
 	self:RebuildBoardState()
 
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
@@ -549,6 +559,26 @@ function BuildService:BlockHexCenter(hexPart: BasePart, reason: string?, modelRe
 	socketState.ModelRef = modelRef
 	self.CenterPathingChanged:Fire(hexPart)
 
+	return true
+end
+
+function BuildService:UnblockHexCenter(hexPart: BasePart, reason: string?): boolean
+	local hexData = self:GetHexData(hexPart)
+	if hexData == nil then
+		return false
+	end
+
+	local socketState = hexData.Sockets.Center
+	if socketState == nil or socketState.Building == nil then
+		return false
+	end
+
+	if reason ~= nil and socketState.BlockedReason ~= reason then
+		return false
+	end
+
+	clearSocketState(socketState, false)
+	self.CenterPathingChanged:Fire(hexPart)
 	return true
 end
 
@@ -698,6 +728,10 @@ function BuildService:RequestDestroy(player: Player, request: DestroyRequest): {
 		return { ok = false, reason = "InvalidRequest" }
 	end
 
+	if self._gameService ~= nil and self._gameService:GetPlayerState(player) ~= PlayerStates.Playing then
+		return { ok = false, reason = "NotPlaying" }
+	end
+
 	local location = self._buildingLocations[request.buildingId]
 	if location == nil or location.SocketState == nil then
 		return { ok = false, reason = "MissingBuilding" }
@@ -800,6 +834,23 @@ function BuildService:_validateBuildRequest(player: Player, request: BuildReques
 
 	if hexData.HexPart.Parent == nil then
 		return { ok = false, reason = "StaleHex" }
+	end
+
+	if CollectionService:HasTag(hexPart, GridConfig.BlockedHexTag or "BlockedHex") then
+		return { ok = false, reason = "BlockedHex" }
+	end
+
+	local requiredHexTag = definition.RequiredHexTag
+	if requiredHexTag ~= nil then
+		if not CollectionService:HasTag(hexPart, requiredHexTag) then
+			return { ok = false, reason = "RequiredTagMissing" }
+		end
+	else
+		for _, otherDef in BuildingConfig.Buildings do
+			if otherDef.RequiredHexTag ~= nil and CollectionService:HasTag(hexPart, otherDef.RequiredHexTag) then
+				return { ok = false, reason = "ExclusiveBuildingHex" }
+			end
+		end
 	end
 
 	if not GridConfig.BuildableTerrains[hexData.TerrainType] then
@@ -925,6 +976,23 @@ function BuildService:_validateMoveRequest(player: Player, request: MoveRequest)
 		return { ok = false, reason = "StaleHex" }
 	end
 
+	if CollectionService:HasTag(hexPart, GridConfig.BlockedHexTag or "BlockedHex") then
+		return { ok = false, reason = "BlockedHex" }
+	end
+
+	local requiredHexTag = definition.RequiredHexTag
+	if requiredHexTag ~= nil then
+		if not CollectionService:HasTag(hexPart, requiredHexTag) then
+			return { ok = false, reason = "RequiredTagMissing" }
+		end
+	else
+		for _, otherDef in BuildingConfig.Buildings do
+			if otherDef.RequiredHexTag ~= nil and CollectionService:HasTag(hexPart, otherDef.RequiredHexTag) then
+				return { ok = false, reason = "ExclusiveBuildingHex" }
+			end
+		end
+	end
+
 	if not GridConfig.BuildableTerrains[hexData.TerrainType] then
 		return { ok = false, reason = "BlockedTerrain" }
 	end
@@ -1048,6 +1116,10 @@ function BuildService:_decrementBuildingCount(player: Player, buildingType: stri
 end
 
 function BuildService:_validateTerritory(player: Player, hexData: HexData): (boolean, string?)
+	if self._territoryService ~= nil then
+		return self._territoryService:CanBuildOnHex(player, hexData.HexPart)
+	end
+
 	if self._nexoService == nil then
 		return false, "NoActiveNexo"
 	end
@@ -1075,12 +1147,12 @@ function BuildService:_destroyBuilding(buildingId: string, location)
 	local definition = if buildingType ~= nil then BuildingConfig.Buildings[buildingType] else nil
 	if player == nil or buildingType == nil or definition == nil then
 		self._buildingLocations[buildingId] = nil
-		clearSocketState(socketState, true)
+		clearSocketState(socketState, true, self._trove)
 		return
 	end
 
 	self._buildingLocations[buildingId] = nil
-	clearSocketState(socketState, true)
+	clearSocketState(socketState, true, self._trove)
 	self:_decrementBuildingCount(player, buildingType)
 	self._resourceService:ApplyBuildingRemoved(player, definition.Population or 0, definition.PopulationCapBonus or 0)
 	self.Client.BuildingDestroyed:FireAll({

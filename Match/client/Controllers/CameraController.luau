@@ -11,6 +11,7 @@ local Knit = require(Packages:WaitForChild("Knit"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local GameConstants = require(Shared:WaitForChild("Constants"):WaitForChild("GameConstants"))
+local WorldInput = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("WorldInput"))
 
 local CameraController = Knit.CreateController({
 	Name = "CameraController",
@@ -106,6 +107,7 @@ function CameraController:KnitInit()
 	self._camera = Workspace.CurrentCamera
 	self._controls = nil
 	self._touchGui = nil
+	self._playerGui = nil
 	self._cameraHeight = GameConstants.Camera.Height
 	self._targetCameraHeight = GameConstants.Camera.Height
 	self._focusPosition = getFallbackFocus()
@@ -133,6 +135,7 @@ end
 
 function CameraController:KnitStart()
 	self._gameService = Knit.GetService("GameService")
+	self._playerGui = LOCAL_PLAYER:WaitForChild("PlayerGui")
 
 	self._trove:Add(
 		self._gameService.DroneAssigned:Connect(function(drone: BasePart?, position: Vector3?, _droneName: string?)
@@ -150,6 +153,10 @@ function CameraController:KnitStart()
 		end
 
 		if input.UserInputType == Enum.UserInputType.Touch then
+			if self:_isPointerOverBlockingUi(Vector2.new(input.Position.X, input.Position.Y)) then
+				return
+			end
+
 			self:_trackTouch(input)
 			return
 		end
@@ -159,8 +166,19 @@ function CameraController:KnitStart()
 
 	self._trove:Add(UserInputService.InputChanged:Connect(function(input: InputObject, _gameProcessedEvent: boolean)
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			if self:_isPointerOverBlockingUi(UserInputService:GetMouseLocation()) then
+				return
+			end
+
 			self:_applyZoomDelta(-input.Position.Z * GameConstants.Camera.ZoomStep)
 		elseif input.UserInputType == Enum.UserInputType.Touch then
+			if
+				self._trackedTouches[input] == nil
+				and self:_isPointerOverBlockingUi(Vector2.new(input.Position.X, input.Position.Y))
+			then
+				return
+			end
+
 			self:_updateTouch(input)
 		end
 	end))
@@ -190,6 +208,10 @@ function CameraController:KnitStart()
 
 	self:_bindNativeControls()
 	self:_resolveDroneFromWorkspace()
+end
+
+function CameraController:_isPointerOverBlockingUi(pointerPosition: Vector2): boolean
+	return WorldInput.IsPointerBlocked(self._playerGui, pointerPosition)
 end
 
 function CameraController:_setDrone(drone: BasePart?)

@@ -17,6 +17,7 @@ function DamageService:KnitInit()
 	self._manpowerService = nil
 	self._nexoService = nil
 	self._targetingService = nil
+	self._diplomacyService = nil
 	self._explosionTargets = {}
 end
 
@@ -25,11 +26,12 @@ function DamageService:KnitStart()
 	self._manpowerService = Knit.GetService("ManpowerService")
 	self._nexoService = Knit.GetService("NexoService")
 	self._targetingService = Knit.GetService("TargetingService")
+	self._diplomacyService = Knit.GetService("DiplomacyService")
 end
 
 function DamageService:ApplyProjectileHit(projectile, target, hitPosition: Vector3): any
 	local explosionRadius = projectile.Weapon.ExplosionRadius
-	if typeof(explosionRadius) == "number" and explosionRadius > 0 then
+	if projectile.Weapon.Explosive == true and typeof(explosionRadius) == "number" and explosionRadius > 0 then
 		return self:_applyExplosion(projectile, hitPosition, explosionRadius)
 	end
 
@@ -39,7 +41,13 @@ end
 function DamageService:_applyExplosion(projectile, hitPosition: Vector3, radius: number): any
 	local explosionTargets = self._explosionTargets
 	table.clear(explosionTargets)
-	self._targetingService:CollectProjectileTargetsInRadius(projectile, hitPosition, radius, os.clock(), explosionTargets)
+	self._targetingService:CollectProjectileTargetsInRadius(
+		projectile,
+		hitPosition,
+		radius,
+		os.clock(),
+		explosionTargets
+	)
 
 	local damaged = 0
 	for index = 1, #explosionTargets do
@@ -54,6 +62,17 @@ function DamageService:_applyExplosion(projectile, hitPosition: Vector3, radius:
 end
 
 function DamageService:_damageTarget(projectile, target): any
+	if target.OwnerUserId == projectile.OwnerUserId then
+		return { ok = false, reason = "FriendlyTarget" }
+	end
+
+	if
+		self._diplomacyService ~= nil
+		and not self._diplomacyService:AreHostile(projectile.OwnerUserId, target.OwnerUserId)
+	then
+		return { ok = false, reason = "FriendlyTarget" }
+	end
+
 	local weapon = projectile.Weapon
 	local damageKind = if target.Kind == TARGET_KIND.Unit then TARGET_KIND.Unit else TARGET_KIND.Structure
 	local damage = weapon.Damage[damageKind]
@@ -70,7 +89,7 @@ function DamageService:_damageTarget(projectile, target): any
 	end
 
 	if target.TargetType == "Nexo" then
-		return self._nexoService:DamageNexo(target.DamageTarget, damage)
+		return self._nexoService:DamageNexo(target.DamageTarget, damage, projectile.OwnerUserId)
 	end
 
 	return { ok = false, reason = "InvalidTarget" }

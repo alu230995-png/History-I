@@ -11,7 +11,8 @@ local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
-local NexoConfig = require(Shared:WaitForChild("Constants"):WaitForChild("NexoConfig"))
+local BuildingConfig = require(Shared:WaitForChild("Constants"):WaitForChild("BuildingConfig"))
+local NexoConfig = BuildingConfig.Nexo
 
 local NexoService = Knit.CreateService({
 	Name = "NexoService",
@@ -156,14 +157,18 @@ function NexoService:KnitInit()
 	self._buildService = nil
 	self._gameService = nil
 	self._resourceService = nil
+	self._territoryService = nil
 	self.CombatTargetChanged = Signal.new()
+	self.TerritoryOwnerChanged = Signal.new()
 	self._trove:Add(self.CombatTargetChanged)
+	self._trove:Add(self.TerritoryOwnerChanged)
 end
 
 function NexoService:KnitStart()
 	self._buildService = Knit.GetService("BuildService")
 	self._gameService = Knit.GetService("GameService")
 	self._resourceService = Knit.GetService("MatchResourceService")
+	self._territoryService = Knit.GetService("TerritoryService")
 
 	self._trove:Add(Players.PlayerRemoving:Connect(function(player: Player)
 		self:_handlePlayerRemoving(player)
@@ -451,17 +456,26 @@ function NexoService:DamageAssignedNexo(player: Player, damage: any): { ok: bool
 		return { ok = false, reason = "MissingNexo" }
 	end
 
-	return self:_damageRecord(record, damage)
+	return self:_damageRecord(record, damage, nil)
 end
 
-function NexoService:DamageNexo(target: any, damage: any): { ok: boolean, reason: string?, hp: number? }
+function NexoService:DamageNexo(
+	target: any,
+	damage: any,
+	attackerUserId: number?
+): { ok: boolean, reason: string?, hp: number? }
 	local record = nil
 	if typeof(target) == "string" then
 		record = self._nexos[target]
 	elseif typeof(target) == "Instance" then
 		for _, nexoId in self._nexoOrder do
 			local current = self._nexos[nexoId] :: NexoRecord
-			if target == current.Instance or target == current.RootPart or target:IsDescendantOf(current.Instance) then
+			local inst = current.Instance
+			local root = current.RootPart
+			if inst == nil or inst.Parent == nil then
+				continue
+			end
+			if target == inst or target == root or target:IsDescendantOf(inst) then
 				record = current
 				break
 			end
@@ -472,7 +486,7 @@ function NexoService:DamageNexo(target: any, damage: any): { ok: boolean, reason
 		return { ok = false, reason = "MissingNexo" }
 	end
 
-	return self:_damageRecord(record, damage)
+	return self:_damageRecord(record, damage, attackerUserId)
 end
 
 function NexoService:_resolveHexPartBelow(instance: Instance, taggedHexes: { Instance }): BasePart?
@@ -519,12 +533,18 @@ function NexoService:_createSnapshot(): any
 
 	for _, nexoId in self._nexoOrder do
 		local record = self._nexos[nexoId] :: NexoRecord
+		local inst = record.Instance
+		local root = record.RootPart
+		local hex = record.HexPart
+		local instAlive = inst ~= nil and inst.Parent ~= nil
+		local rootAlive = root ~= nil and root.Parent ~= nil
+		local hexAlive = hex ~= nil and hex.Parent ~= nil
 		table.insert(nexos, {
 			id = record.Id,
 			tag = record.Tag,
-			instance = record.Instance,
-			rootPart = record.RootPart,
-			hexPart = record.HexPart,
+			instance = if instAlive then inst else nil,
+			rootPart = if rootAlive then root else nil,
+			hexPart = if hexAlive then hex else nil,
 			territoryState = record.TerritoryState,
 			displayName = record.DisplayName,
 			lore = record.Lore,
@@ -571,6 +591,7 @@ function NexoService:_assignRecordToPlayer(player: Player, record: NexoRecord, a
 	self._assignedByPlayer[player] = record.Id
 	self._previewByPlayer[player] = nil
 	record.Instance:SetAttribute("NexoActive", record.IsActive)
+	record.Instance:SetAttribute("OwnerUserId", player.UserId)
 
 	if self._resourceService ~= nil then
 		self._resourceService:SetNexoActive(player, record.IsActive)
@@ -582,9 +603,14 @@ function NexoService:_assignRecordToPlayer(player: Player, record: NexoRecord, a
 		automatic = automatic,
 	})
 	self.CombatTargetChanged:Fire(record, record.IsActive)
+	self.TerritoryOwnerChanged:Fire(record.TerritoryState, player.UserId)
 end
 
-function NexoService:_damageRecord(record: NexoRecord, damage: any): { ok: boolean, reason: string?, hp: number? }
+function NexoService:_damageRecord(
+	record: NexoRecord,
+	damage: any,
+	attackerUserId: number?
+): { ok: boolean, reason: string?, hp: number? }
 	if not isPositiveFiniteNumber(damage) then
 		return { ok = false, reason = "InvalidDamage" }
 	end
@@ -594,17 +620,19 @@ function NexoService:_damageRecord(record: NexoRecord, damage: any): { ok: boole
 	end
 
 	record.HP = math.max(0, record.HP - damage)
-	record.Instance:SetAttribute("HP", record.HP)
+	if record.Instance ~= nil and record.Instance.Parent ~= nil then
+		record.Instance:SetAttribute("HP", record.HP)
+	end
 
 	if record.HP <= 0 then
-		self:_deactivateRecord(record)
+		self:_deactivateRecord(record, attackerUserId)
 	end
 
 	self:_broadcastSnapshot()
 	return { ok = true, hp = record.HP }
 end
 
-function NexoService:_deactivateRecord(record: NexoRecord)
+function NexoService:_deactivateRecord(record: NexoRecord, attackerUserId: number?)
 	if not record.IsActive then
 		return
 	end
@@ -614,6 +642,23 @@ function NexoService:_deactivateRecord(record: NexoRecord)
 	self.CombatTargetChanged:Fire(record, false)
 
 	local userId = record.TakenByUserId
+	if
+		typeof(attackerUserId) == "number"
+		and userId ~= nil
+		and attackerUserId ~= userId
+		and self._territoryService ~= nil
+	then
+		self._territoryService:TransferState(record.TerritoryState, attackerUserId, userId)
+	end
+
+	if self._buildService ~= nil then
+		self._buildService:UnblockHexCenter(record.HexPart, NexoConfig.BlockReason)
+	end
+
+	if record.Instance.Parent ~= nil then
+		record.Instance:Destroy()
+	end
+
 	if userId == nil then
 		return
 	end

@@ -180,7 +180,9 @@ local function barracksPanel(props)
 
 	local queue = props.queue
 	local count = if queue ~= nil and typeof(queue.Count) == "number" then queue.Count else 0
-	local capacity = if queue ~= nil and typeof(queue.Capacity) == "number" then queue.Capacity else ManpowerConfig.QueueCapacity
+	local capacity = if queue ~= nil and typeof(queue.Capacity) == "number"
+		then queue.Capacity
+		else ManpowerConfig.QueueCapacity
 	local queueFull = count >= capacity
 	local queueChildren = {
 		Layout = React.createElement("UIListLayout", {

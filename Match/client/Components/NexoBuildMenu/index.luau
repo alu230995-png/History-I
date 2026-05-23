@@ -257,6 +257,7 @@ local function NexoBuildMenu(props)
 				Size = UDim2.new(1, 0, 0, px(332)),
 				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
+				Active = true,
 				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				CanvasSize = UDim2.fromScale(0, 0),
 				ScrollBarThickness = px(4),

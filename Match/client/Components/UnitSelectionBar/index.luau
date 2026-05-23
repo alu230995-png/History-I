@@ -39,7 +39,9 @@ local function unitCard(unit, layoutOrder: number, onDeselect)
 			Position = UDim2.fromScale(0.5, 0.45),
 			Size = UDim2.fromOffset(px(32), px(32)),
 			BackgroundTransparency = 1,
-			Image = if definition ~= nil then definition.Icon or ManpowerConfig.PlaceholderIcon else ManpowerConfig.PlaceholderIcon,
+			Image = if definition ~= nil
+				then definition.Icon or ManpowerConfig.PlaceholderIcon
+				else ManpowerConfig.PlaceholderIcon,
 			ImageColor3 = colors.Text,
 			ScaleType = Enum.ScaleType.Fit,
 		}),

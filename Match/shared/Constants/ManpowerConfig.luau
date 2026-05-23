@@ -10,6 +10,23 @@ ManpowerConfig.TerrainPassable = table.freeze({
 	Desert = true,
 	Mountain = true,
 	Water = false,
+	Sea = false,
+})
+
+ManpowerConfig.MovementProfiles = table.freeze({
+	Terrestrial = table.freeze({
+		AllowedTerrain = table.freeze({
+			Plain = true,
+			Forest = true,
+			Desert = true,
+			Mountain = true,
+		}),
+		BlockedTerrain = table.freeze({
+			Water = true,
+			Sea = true,
+		}),
+		MaxStepHeight = 2.25,
+	}),
 })
 
 ManpowerConfig.MovementModes = table.freeze({
@@ -68,6 +85,7 @@ ManpowerConfig.Movement = table.freeze({
 	StuckSeconds = 1.5,
 	TemporaryBlockSeconds = 1,
 	MaxStuckFailures = 3,
+	MaxStepHeight = ManpowerConfig.MovementProfiles.Terrestrial.MaxStepHeight,
 })
 
 ManpowerConfig.VisualMotion = table.freeze({
@@ -83,6 +101,7 @@ ManpowerConfig.VisualMotion = table.freeze({
 	MinCatchupSpeed = 6,
 	TurnResponsiveness = 9,
 	MaxAngularVelocity = 5,
+	CFrameLerpGain = 18,
 })
 
 ManpowerConfig.VisualSlotOffsets = table.freeze({
@@ -103,12 +122,14 @@ ManpowerConfig.Units = table.freeze({
 		HP = 100,
 		Movement = table.freeze({
 			Speed = 12,
+			Profile = "Terrestrial",
 		}),
 		VisualMotion = table.freeze({
 			PositionGain = 6.5,
 			MaxSpeedScale = 1.5,
 			TurnResponsiveness = 11,
 			MaxAngularVelocity = 6.5,
+			CFrameLerpGain = 22,
 		}),
 		MovementMode = ManpowerConfig.MovementModes.Humanoid,
 		RootPartName = "HumanoidRootPart",
@@ -118,6 +139,10 @@ ManpowerConfig.Units = table.freeze({
 			TargetScanIntervalSeconds = 0.25,
 			MuzzleSource = "Tool",
 			MuzzleName = "Muzzle",
+		}),
+		Capture = table.freeze({
+			Seconds = 7,
+			Rate = 1,
 		}),
 	}),
 
@@ -131,6 +156,7 @@ ManpowerConfig.Units = table.freeze({
 		HP = 300,
 		Movement = table.freeze({
 			Speed = 8,
+			Profile = "Terrestrial",
 		}),
 		VisualMotion = table.freeze({
 			ProxySize = Vector3.new(3.2, 2.2, 3.2),
@@ -139,6 +165,7 @@ ManpowerConfig.Units = table.freeze({
 			MaxSpeedScale = 1.25,
 			TurnResponsiveness = 5.5,
 			MaxAngularVelocity = 3.25,
+			CFrameLerpGain = 14,
 		}),
 		MovementMode = ManpowerConfig.MovementModes.Humanoid,
 		RootPartName = "HumanoidRootPart",
@@ -148,6 +175,10 @@ ManpowerConfig.Units = table.freeze({
 			TargetScanIntervalSeconds = 0.25,
 			MuzzleSource = "RootPart",
 			MuzzleName = "Muzzle",
+		}),
+		Capture = table.freeze({
+			Seconds = 11,
+			Rate = 1.35,
 		}),
 	}),
 })

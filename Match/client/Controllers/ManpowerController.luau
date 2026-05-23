@@ -1,5 +1,4 @@
 local CollectionService = game:GetService("CollectionService")
-local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -17,8 +16,10 @@ local Trove = require(Packages:WaitForChild("Trove"))
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
+local WeaponConfig = require(Shared:WaitForChild("Constants"):WaitForChild("WeaponConfig"))
 local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
+local TropaCollisionGroups = require(Shared:WaitForChild("Utils"):WaitForChild("TropaCollisionGroups"))
 
 local UnitSelectionBar =
 	require(script.Parent.Parent:WaitForChild("Components"):WaitForChild("UnitSelectionBar"):WaitForChild("index"))
@@ -33,8 +34,10 @@ local MAX_RAY_DISTANCE = 500
 local MIN_FACING_MAGNITUDE = 0.001
 local ZERO_VECTOR = Vector3.zero
 local DEFAULT_VISUAL_MOTION = ManpowerConfig.VisualMotion
-local MOTION_COLLISION_GROUP = "ManpowerMotion"
-local motionCollisionGroupReady = false
+
+local function canCommandUnits(playerState: string?): boolean
+	return playerState == PlayerStates.Playing
+end
 
 local function findUnitModel(instance: Instance?, unitFolder: Folder?): Model?
 	local current = instance
@@ -122,6 +125,82 @@ local function getUnitSource(unitType: string): Model?
 	return if source ~= nil and source:IsA("Model") then source else nil
 end
 
+local function getWeaponSource(weapon): Instance?
+	local path = if type(weapon) == "table" then weapon.Path else nil
+	if typeof(path) ~= "string" or path == "" then
+		return nil
+	end
+
+	local source = resolvePath(path)
+	return if source ~= nil and (source:IsA("Model") or source:IsA("Tool")) then source else nil
+end
+
+local function getWeaponPivotPart(weaponSource: Instance): BasePart?
+	if weaponSource:IsA("Model") and weaponSource.PrimaryPart ~= nil then
+		return weaponSource.PrimaryPart
+	end
+
+	local handle = weaponSource:FindFirstChild("Handle", true)
+	if handle ~= nil and handle:IsA("BasePart") then
+		return handle
+	end
+
+	return weaponSource:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getWeaponPivotCFrame(weaponSource: Instance): CFrame?
+	if weaponSource:IsA("Model") then
+		return weaponSource:GetPivot()
+	end
+
+	local primaryPart = getWeaponPivotPart(weaponSource)
+	if primaryPart ~= nil then
+		return primaryPart.CFrame
+	end
+
+	return nil
+end
+
+local function pivotWeaponSource(weaponSource: Instance, targetPivot: CFrame)
+	if weaponSource:IsA("Model") then
+		weaponSource:PivotTo(targetPivot)
+		return
+	end
+
+	local currentPivot = getWeaponPivotCFrame(weaponSource)
+	if currentPivot == nil then
+		return
+	end
+
+	local delta = targetPivot * currentPivot:Inverse()
+	for _, descendant in weaponSource:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.CFrame = delta * descendant.CFrame
+		end
+	end
+end
+
+local function getAttachmentCFrame(instance: Instance?): CFrame?
+	if instance == nil then
+		return nil
+	end
+
+	if instance:IsA("Attachment") then
+		return instance.WorldCFrame
+	end
+
+	if instance:IsA("BasePart") then
+		return instance.CFrame
+	end
+
+	return nil
+end
+
+local function getGripOffset(weapon): CFrame
+	local gripOffset = if type(weapon) == "table" then weapon.GripOffset else nil
+	return if typeof(gripOffset) == "CFrame" then gripOffset else CFrame.new()
+end
+
 local function getRootPart(model: Model, unitType: string): BasePart?
 	local definition = ManpowerConfig.GetUnit(unitType)
 	if definition ~= nil then
@@ -146,22 +225,6 @@ local function configureLinearVelocityForce(linearVelocity: LinearVelocity, maxA
 			linearVelocity.MaxForce = math.max(maxAxesForce.X, maxAxesForce.Y, maxAxesForce.Z)
 		end)
 	end
-end
-
-local function configureMotionCollisionGroup(proxy: BasePart)
-	if not motionCollisionGroupReady then
-		motionCollisionGroupReady = true
-		pcall(function()
-			PhysicsService:RegisterCollisionGroup(MOTION_COLLISION_GROUP)
-		end)
-		pcall(function()
-			PhysicsService:CollisionGroupSetCollidable(MOTION_COLLISION_GROUP, MOTION_COLLISION_GROUP, false)
-		end)
-	end
-
-	pcall(function()
-		proxy.CollisionGroup = MOTION_COLLISION_GROUP
-	end)
 end
 
 local function getVisualMotionSettings(unitType: string)
@@ -199,6 +262,9 @@ local function getVisualMotionSettings(unitType: string)
 		MaxAngularVelocity = if overrides ~= nil and typeof(overrides.MaxAngularVelocity) == "number"
 			then overrides.MaxAngularVelocity
 			else DEFAULT_VISUAL_MOTION.MaxAngularVelocity,
+		CFrameLerpGain = if overrides ~= nil and typeof(overrides.CFrameLerpGain) == "number"
+			then overrides.CFrameLerpGain
+			else DEFAULT_VISUAL_MOTION.CFrameLerpGain,
 	}
 end
 
@@ -236,16 +302,12 @@ function ManpowerController:KnitInit()
 	self._unitFolder = nil
 	self._manpowerService = nil
 	self._gameService = nil
+	self._playerState = nil
 	self._isBuildingMode = false
-	self._selectedById = {}
-	self._selectionOrder = {}
-	self._highlights = {}
 	self._visualById = {}
 	self._visualByNetId = {}
 	self._gridByPart = {}
 	self._gridByKey = {}
-	self._root = nil
-	self._screenGui = nil
 
 	self._trove:Add(Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 		self._camera = Workspace.CurrentCamera
@@ -257,7 +319,6 @@ function ManpowerController:KnitStart()
 	self._gameService = Knit.GetService("GameService")
 	self:_mountUnitFolder()
 	self:_rebuildHexCache()
-	self:_mountUi()
 
 	self._trove:Add(CollectionService:GetInstanceAddedSignal(GridConfig.BuildableHexTag):Connect(function(instance)
 		self:_scanHex(instance)
@@ -266,7 +327,7 @@ function ManpowerController:KnitStart()
 		self:_removeHex(instance)
 	end))
 	self._trove:Add(self._gameService.PlayerStateChanged:Connect(function(_oldState: string, newState: string)
-		self._isBuildingMode = newState == PlayerStates.Building
+		self:_setPlayerState(newState)
 	end))
 	self._trove:Add(self._manpowerService.UnitSpawned:Connect(function(payload)
 		self:_spawnVisual(payload)
@@ -277,19 +338,6 @@ function ManpowerController:KnitStart()
 	self._trove:Add(self._manpowerService.UnitDestroyed:Connect(function(payload)
 		if type(payload) == "table" and typeof(payload.UnitId) == "string" then
 			self:_destroyVisual(payload.UnitId)
-		end
-	end))
-	self._trove:Add(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessedEvent: boolean)
-		if gameProcessedEvent or self._isBuildingMode then
-			return
-		end
-
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			self:_activateAtPointer(UserInputService:GetMouseLocation())
-		elseif input.UserInputType == Enum.UserInputType.Touch then
-			self:_activateAtPointer(Vector2.new(input.Position.X, input.Position.Y))
-		elseif input.KeyCode == Enum.KeyCode.Escape then
-			self:_clearSelection()
 		end
 	end))
 	self._trove:Add(RunService.Heartbeat:Connect(function()
@@ -304,7 +352,16 @@ function ManpowerController:KnitStart()
 	end
 
 	local state = self._gameService:GetPlayerState()
+	self:_setPlayerState(state)
+end
+
+function ManpowerController:_setPlayerState(state: string?)
+	self._playerState = state
 	self._isBuildingMode = state == PlayerStates.Building
+
+	if not canCommandUnits(state) then
+		self:_clearSelection()
+	end
 end
 
 function ManpowerController:_mountUnitFolder()
@@ -417,6 +474,7 @@ function ManpowerController:_spawnVisual(payload)
 	end
 
 	self:_prepareVisualModel(model, root, payload)
+	self:_attachWeaponVisual(model, payload.UnitType)
 	local slotIndex = if typeof(payload.SlotIndex) == "number" then payload.SlotIndex else 1
 	local position = self:_getHexSlotPosition(payload.HexKey, slotIndex)
 	if position == nil then
@@ -440,6 +498,7 @@ function ManpowerController:_spawnVisual(payload)
 		MovementQueue = {},
 		StateMachine = stateMachine,
 		SlotIndex = slotIndex,
+		LastVisualUpdateAt = os.clock(),
 	}
 	visual.Motion = self:_createVisualMotion(visual.UnitId, model:GetPivot(), getVisualMotionSettings(visual.UnitType))
 	model:SetAttribute("UnitState", stateMachine:GetState())
@@ -449,6 +508,65 @@ function ManpowerController:_spawnVisual(payload)
 	if payload.Segment ~= nil then
 		self:_applySegmentSnapshot(visual, payload.Segment)
 	end
+end
+
+function ManpowerController:_attachWeaponVisual(model: Model, unitType: string)
+	local definition = ManpowerConfig.GetUnit(unitType)
+	local combat = if definition ~= nil then definition.Combat else nil
+	local weapon = if type(combat) == "table" then WeaponConfig.GetWeapon(combat.WeaponId) else nil
+	local weaponSource = if weapon ~= nil then getWeaponSource(weapon) else nil
+	if weapon == nil or weaponSource == nil then
+		return
+	end
+
+	local attachTo = if typeof(weapon.AttachTo) == "string" and weapon.AttachTo ~= ""
+		then weapon.AttachTo
+		else "RightHand"
+	local unitPart = model:FindFirstChild(attachTo, true)
+	if unitPart == nil or not unitPart:IsA("BasePart") then
+		warn(("[ManpowerController] Unit %s has no weapon attach part %s"):format(unitType, attachTo))
+		return
+	end
+
+	local weaponModel = weaponSource:Clone()
+	weaponModel.Name = `{weapon.Id}_Visual`
+	for _, descendant in weaponModel:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = true
+		end
+	end
+	TropaCollisionGroups.ApplyToModel(weaponModel)
+
+	local unitAttachmentName = weapon.UnitAttachmentName
+	local unitAttachment = if typeof(unitAttachmentName) == "string" and unitAttachmentName ~= ""
+		then unitPart:FindFirstChild(unitAttachmentName, true)
+		else nil
+	local targetGripCFrame = (getAttachmentCFrame(unitAttachment) or unitPart.CFrame) * getGripOffset(weapon)
+	local sourcePivot = getWeaponPivotCFrame(weaponModel)
+	if sourcePivot == nil then
+		weaponModel:Destroy()
+		return
+	end
+	local weaponAttachmentName = weapon.WeaponAttachmentName
+	local weaponAttachment = if typeof(weaponAttachmentName) == "string" and weaponAttachmentName ~= ""
+		then weaponModel:FindFirstChild(weaponAttachmentName, true)
+		else nil
+	local attachmentCFrame = getAttachmentCFrame(weaponAttachment)
+	local targetPivot = nil
+	if attachmentCFrame ~= nil then
+		targetPivot = targetGripCFrame * sourcePivot:ToObjectSpace(attachmentCFrame):Inverse()
+	else
+		local pivotPart = getWeaponPivotPart(weaponModel)
+		targetPivot = if pivotPart ~= nil
+			then targetGripCFrame * sourcePivot:ToObjectSpace(pivotPart.CFrame):Inverse()
+			else targetGripCFrame
+	end
+
+	pivotWeaponSource(weaponModel, targetPivot)
+	weaponModel.Parent = model
 end
 
 function ManpowerController:_prepareVisualModel(model: Model, root: BasePart, payload)
@@ -473,6 +591,8 @@ function ManpowerController:_prepareVisualModel(model: Model, root: BasePart, pa
 			descendant:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 		end
 	end
+
+	TropaCollisionGroups.ApplyToModel(model)
 end
 
 function ManpowerController:_createVisualMotion(unitId: string, visualCFrame: CFrame, settings)
@@ -488,7 +608,7 @@ function ManpowerController:_createVisualMotion(unitId: string, visualCFrame: CF
 	proxy.CanTouch = false
 	proxy.CanQuery = false
 	proxy.CustomPhysicalProperties = PhysicalProperties.new(1, settings.ProxyFriction, 0, 1, 1)
-	configureMotionCollisionGroup(proxy)
+	TropaCollisionGroups.ApplyToPart(proxy)
 
 	local attachment = Instance.new("Attachment")
 	attachment.Name = "MotionAttachment"
@@ -536,11 +656,6 @@ function ManpowerController:_snapVisualMotion(visual, targetCFrame: CFrame)
 end
 
 function ManpowerController:_getVisualCFrame(visual): CFrame
-	local motion = visual.Motion
-	if motion ~= nil then
-		return motion.Proxy.CFrame - motion.Settings.ProxyOffset
-	end
-
 	return visual.Model:GetPivot()
 end
 
@@ -548,10 +663,11 @@ function ManpowerController:_getVisualPosition(visual): Vector3
 	return self:_getVisualCFrame(visual).Position
 end
 
-function ManpowerController:_followVisualMotion(visual, movement, expectedPosition: Vector3, settling: boolean)
+function ManpowerController:_followVisualMotion(visual, movement, expectedPosition: Vector3, deltaTime: number)
+	local targetCFrame = getMovementCFrame(expectedPosition, movement.Facing)
 	local motion = visual.Motion
 	if motion == nil then
-		visual.Model:PivotTo(getMovementCFrame(expectedPosition, movement.Facing))
+		visual.Model:PivotTo(targetCFrame)
 		return
 	end
 
@@ -561,15 +677,12 @@ function ManpowerController:_followVisualMotion(visual, movement, expectedPositi
 	local expectedProxyPosition = expectedPosition + settings.ProxyOffset
 	local positionError = expectedProxyPosition - proxyPosition
 	if positionError.Magnitude >= settings.SnapDistance then
-		self:_snapVisualMotion(visual, getMovementCFrame(expectedPosition, movement.Facing))
+		self:_snapVisualMotion(visual, targetCFrame)
 		proxyPosition = expectedProxyPosition
 		positionError = ZERO_VECTOR
 	end
 
-	local desiredVelocity = positionError * settings.PositionGain
-	if not settling then
-		desiredVelocity += movement.Velocity
-	end
+	local desiredVelocity = positionError * settings.PositionGain + movement.Velocity
 
 	local desiredSpeed = desiredVelocity.Magnitude
 	local maxSpeed = math.max(movement.Speed * settings.MaxSpeedScale, settings.MinCatchupSpeed)
@@ -579,7 +692,9 @@ function ManpowerController:_followVisualMotion(visual, movement, expectedPositi
 
 	motion.LinearVelocity.VectorVelocity = desiredVelocity
 	motion.AlignOrientation.CFrame = getMovementCFrame(proxyPosition, movement.Facing)
-	visual.Model:PivotTo(self:_getVisualCFrame(visual))
+
+	local cframeAlpha = 1 - math.exp(-settings.CFrameLerpGain * math.max(deltaTime, 0))
+	visual.Model:PivotTo(visual.Model:GetPivot():Lerp(targetCFrame, math.clamp(cframeAlpha, 0, 1)))
 end
 
 function ManpowerController:_applyWaypointBatch(batch)
@@ -622,9 +737,11 @@ function ManpowerController:_applySegmentSnapshot(visual, segment)
 
 	visual.SlotIndex = segment[3]
 	table.clear(visual.MovementQueue)
-	visual.Movement = createVisualMovement(fromPosition, toPosition, duration, os.clock() - elapsed)
+	local now = os.clock()
+	visual.LastVisualUpdateAt = now
+	visual.Movement = createVisualMovement(fromPosition, toPosition, duration, now - elapsed)
 	self:_setVisualState(visual, ManpowerConfig.UnitStates.Moving, "SegmentSnapshot")
-	self:_updateVisual(visual, os.clock())
+	self:_updateVisual(visual, now)
 end
 
 function ManpowerController:_applyWaypoint(visual, waypoint)
@@ -662,7 +779,9 @@ function ManpowerController:_applyWaypoint(visual, waypoint)
 	visual.SlotIndex = waypoint[4]
 	local movement = createVisualMovement(fromPosition, toPosition, math.max(waypoint[5], 0.001), 0)
 	if visual.Movement == nil then
-		movement.StartedAt = os.clock()
+		local now = os.clock()
+		movement.StartedAt = now
+		visual.LastVisualUpdateAt = now
 		visual.Movement = movement
 	else
 		table.insert(visual.MovementQueue, movement)
@@ -685,23 +804,20 @@ function ManpowerController:_updateVisual(visual, now: number)
 		return
 	end
 
+	local deltaTime = math.clamp(now - (visual.LastVisualUpdateAt or now), 0, 0.1)
+	visual.LastVisualUpdateAt = now
+
 	while movement ~= nil do
 		local alpha = math.clamp((now - movement.StartedAt) / movement.Duration, 0, 1)
 		local position = movement.From:Lerp(movement.To, alpha)
 		local nextMovement = visual.MovementQueue[1]
-		local isSettling = alpha >= 1 and nextMovement == nil
-		self:_followVisualMotion(visual, movement, position, isSettling)
+		self:_followVisualMotion(visual, movement, position, deltaTime)
 
 		if alpha < 1 then
 			return
 		end
 
 		if nextMovement == nil then
-			local motion = visual.Motion
-			if motion ~= nil and (motion.Proxy.Position - movement.To).Magnitude > motion.Settings.ArrivalRadius then
-				return
-			end
-
 			self:_snapVisualMotion(visual, getMovementCFrame(movement.To, movement.Facing))
 			visual.Movement = nil
 			self:_setVisualState(visual, ManpowerConfig.UnitStates.Idle, "RouteFinished")
@@ -750,7 +866,6 @@ function ManpowerController:_destroyVisual(unitId: string)
 		return
 	end
 
-	self:_deselectUnit(unitId)
 	self._visualById[unitId] = nil
 	self._visualByNetId[visual.NetId] = nil
 	if visual.Motion ~= nil then
@@ -760,156 +875,12 @@ function ManpowerController:_destroyVisual(unitId: string)
 	visual.Model:Destroy()
 end
 
-function ManpowerController:_activateAtPointer(pointerPosition: Vector2)
-	if self._camera == nil or self:_isPointerOverUi(pointerPosition) then
-		return
-	end
-
-	local ray = self._camera:ViewportPointToRay(pointerPosition.X, pointerPosition.Y)
-	local result = Workspace:Raycast(ray.Origin, ray.Direction * MAX_RAY_DISTANCE)
-	if result == nil then
-		return
-	end
-
-	local unitModel = findUnitModel(result.Instance, self._unitFolder)
-	if unitModel ~= nil then
-		self:_toggleUnit(unitModel)
-		return
-	end
-
-	if #self._selectionOrder <= 0 then
-		return
-	end
-
-	local hexPart = findHexPart(result.Instance)
-	if hexPart ~= nil then
-		self:_requestMove(hexPart)
-	end
-end
-
-function ManpowerController:_isPointerOverUi(pointerPosition: Vector2): boolean
-	local playerGui = LOCAL_PLAYER:FindFirstChild("PlayerGui")
-	if playerGui == nil or not playerGui:IsA("PlayerGui") then
-		return false
-	end
-
-	return WorldInput.IsPointerBlocked(playerGui, pointerPosition)
-end
-
-function ManpowerController:_toggleUnit(model: Model)
-	if model:GetAttribute("OwnerUserId") ~= LOCAL_PLAYER.UserId then
-		return
-	end
-
-	local unitId = model:GetAttribute("UnitId")
-	if typeof(unitId) ~= "string" then
-		return
-	end
-
-	if self._selectedById[unitId] ~= nil then
-		self:_deselectUnit(unitId)
-		return
-	end
-
-	self._selectedById[unitId] = model
-	table.insert(self._selectionOrder, unitId)
-	self:_ensureHighlight(unitId, model)
-	self:_render()
-end
-
-function ManpowerController:_ensureHighlight(unitId: string, model: Model)
-	if self._highlights[unitId] ~= nil then
-		return
-	end
-
-	local highlight = Instance.new("Highlight")
-	highlight.Name = `SelectedUnit_{unitId}`
-	highlight.Adornee = model
-	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	highlight.FillColor = Color3.fromRGB(255, 255, 255)
-	highlight.FillTransparency = 0.78
-	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-	highlight.OutlineTransparency = 0.02
-	highlight.Parent = Workspace
-	self._highlights[unitId] = highlight
-	self._trove:Add(highlight)
-end
-
-function ManpowerController:_deselectUnit(unitId: string)
-	if self._selectedById[unitId] == nil then
-		return
-	end
-
-	self._selectedById[unitId] = nil
-	for index = #self._selectionOrder, 1, -1 do
-		if self._selectionOrder[index] == unitId then
-			table.remove(self._selectionOrder, index)
-			break
-		end
-	end
-
-	local highlight = self._highlights[unitId]
-	if highlight ~= nil then
-		highlight:Destroy()
-	end
-	self._highlights[unitId] = nil
-	self:_render()
-end
-
-function ManpowerController:_clearSelection()
-	for index = #self._selectionOrder, 1, -1 do
-		self:_deselectUnit(self._selectionOrder[index])
-	end
-end
-
-function ManpowerController:_requestMove(hexPart: BasePart)
-	if self._manpowerService == nil then
-		return
-	end
-
-	local unitIds = table.create(#self._selectionOrder)
-	for index = 1, #self._selectionOrder do
-		unitIds[index] = self._selectionOrder[index]
-	end
-
-	self._manpowerService:RequestMoveUnits({
-		unitIds = unitIds,
-		destinationHex = hexPart,
-	})
-end
-
-function ManpowerController:_render()
-	if self._root == nil then
-		return
-	end
-
-	local units = table.create(#self._selectionOrder)
-	for index = 1, #self._selectionOrder do
-		local unitId = self._selectionOrder[index]
-		local visual = self._visualById[unitId]
-		if visual ~= nil then
-			units[index] = {
-				UnitId = unitId,
-				UnitType = visual.UnitType,
-			}
-		end
-	end
-
-	self._root:render(React.createElement(UnitSelectionBar, {
-		units = units,
-		onDeselect = function(unitId: string)
-			self:_deselectUnit(unitId)
-		end,
-	}))
-end
-
 function ManpowerController:Destroy()
 	if self._destroyed then
 		return
 	end
 
 	self._destroyed = true
-	self:_clearSelection()
 	for unitId in self._visualById do
 		self:_destroyVisual(unitId)
 	end

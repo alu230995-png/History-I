@@ -131,11 +131,13 @@ function ProjectileService:_broadcastSpawn(projectile)
 
 	self.Client.ProjectileSpawned:FireAll({
 		Id = projectile.Id,
+		WeaponId = weapon.Id,
 		Position = projectile.Position,
 		Direction = projectile.Direction,
 		Speed = projectile.Speed,
 		Lifetime = weapon.Lifetime,
 		VisualKind = weapon.VisualKind,
+		ProjectilePath = weapon.ProjectilePath,
 	})
 end
 
@@ -147,8 +149,10 @@ function ProjectileService:_broadcastImpact(projectile, position: Vector3)
 
 	self.Client.ProjectileImpacted:FireAll({
 		Id = projectile.Id,
+		WeaponId = weapon.Id,
 		Position = position,
 		VisualKind = weapon.VisualKind,
+		Explosive = weapon.Explosive == true,
 		ExplosionRadius = weapon.ExplosionRadius,
 	})
 end

@@ -12,11 +12,12 @@ local Knit = require(Packages:WaitForChild("Knit"))
 local Signal = require(Packages:WaitForChild("Signal"))
 local Trove = require(Packages:WaitForChild("Trove"))
 
+local ArmyPhaseConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ArmyPhaseConfig"))
 local GridConfig = require(Shared:WaitForChild("Constants"):WaitForChild("GridConfig"))
 local ManpowerConfig = require(Shared:WaitForChild("Constants"):WaitForChild("ManpowerConfig"))
 local PlayerStates = require(Shared:WaitForChild("Constants"):WaitForChild("PlayerStates"))
-local StateMachine = require(Shared:WaitForChild("Classes"):WaitForChild("StateMachine"))
 local HexUtils = require(Shared:WaitForChild("Utils"):WaitForChild("HexUtils"))
+local TropaTerrestre = require(script.Parent.Parent:WaitForChild("Classes"):WaitForChild("TropaTerrestre"))
 
 type QueueEntry = {
 	Id: string,
@@ -39,6 +40,7 @@ type HexRecord = {
 	Q: number,
 	R: number,
 	Center: Vector3,
+	TerrainType: string,
 	Passable: boolean,
 	Neighbors: { HexRecord },
 }
@@ -59,6 +61,7 @@ type UnitRecord = {
 	UnitType: string,
 	Definition: any,
 	HP: number,
+	Vida: number,
 	CurrentHexKey: string,
 	SlotIndex: number,
 	OrderDestinationKey: string?,
@@ -111,16 +114,6 @@ local function isFiniteNumber(value: any): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
-local function getUnitSpeed(definition): number
-	local movement = definition.Movement
-	local configuredSpeed = if type(movement) == "table" then movement.Speed else definition.Speed
-	if not isFiniteNumber(configuredSpeed) then
-		return 0.001
-	end
-
-	return math.max(configuredSpeed, 0.001)
-end
-
 local function getTerrainType(hexPart: BasePart): string
 	local terrainType = hexPart:GetAttribute("TerrainType")
 	if typeof(terrainType) ~= "string" or terrainType == "" then
@@ -128,6 +121,29 @@ local function getTerrainType(hexPart: BasePart): string
 	end
 
 	return terrainType
+end
+
+local function getTerrestrialProfile()
+	return ManpowerConfig.MovementProfiles.Terrestrial
+end
+
+local function isTerrainPassableForTerrestrial(terrainType: string): boolean
+	local profile = getTerrestrialProfile()
+	if profile.BlockedTerrain[terrainType] == true then
+		return false
+	end
+
+	return profile.AllowedTerrain[terrainType] == true
+end
+
+local function getMaxStepHeight(): number
+	local profile = getTerrestrialProfile()
+	local configuredHeight = profile.MaxStepHeight
+	if isFiniteNumber(configuredHeight) and configuredHeight >= 0 then
+		return configuredHeight
+	end
+
+	return ManpowerConfig.Movement.MaxStepHeight
 end
 
 local function splitPath(path: string): { string }
@@ -266,6 +282,7 @@ function ManpowerService:KnitInit()
 	self._temporaryBlocks = {}
 	self._flowFields = {}
 	self._lastRequestAt = {}
+	self._armyPhaseByPlayer = {}
 	self._pendingWaypoints = {}
 	self._pathRevision = 0
 	self._simulationAccumulator = 0
@@ -277,8 +294,12 @@ function ManpowerService:KnitInit()
 	self._resourceService = nil
 	self.UnitSpawned = Signal.new()
 	self.UnitDestroyed = Signal.new()
+	self.UnitEnteredHex = Signal.new()
+	self.UnitLeftHex = Signal.new()
 	self._trove:Add(self.UnitSpawned)
 	self._trove:Add(self.UnitDestroyed)
+	self._trove:Add(self.UnitEnteredHex)
+	self._trove:Add(self.UnitLeftHex)
 end
 
 function ManpowerService:KnitStart()
@@ -363,8 +384,43 @@ function ManpowerService:GetCombatUnits(): { UnitRecord }
 	return units
 end
 
+function ManpowerService:GetArmyPhase(player: Player): string
+	local phase = self._armyPhaseByPlayer[player]
+	if ArmyPhaseConfig.IsValidPhase(phase) then
+		return phase
+	end
+
+	self._armyPhaseByPlayer[player] = ArmyPhaseConfig.DefaultPhase
+	return ArmyPhaseConfig.DefaultPhase
+end
+
+function ManpowerService:AdvanceArmyPhase(
+	player: Player,
+	nextPhase: string
+): { ok: boolean, phase: string, reason: string? }
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+		return { ok = false, phase = ArmyPhaseConfig.DefaultPhase, reason = "InvalidPlayer" }
+	end
+
+	if not ArmyPhaseConfig.IsValidPhase(nextPhase) then
+		return { ok = false, phase = self:GetArmyPhase(player), reason = "InvalidPhase" }
+	end
+
+	local currentPhase = self:GetArmyPhase(player)
+	if currentPhase == nextPhase then
+		return { ok = true, phase = currentPhase }
+	end
+
+	if not ArmyPhaseConfig.CanTransition(currentPhase, nextPhase) then
+		return { ok = false, phase = currentPhase, reason = "TransitionRejected" }
+	end
+
+	self._armyPhaseByPlayer[player] = nextPhase
+	return { ok = true, phase = nextPhase }
+end
+
 function ManpowerService:IsCombatUnitActive(unit: UnitRecord): boolean
-	return unit ~= nil and self._units[unit.Id] == unit and unit.HP > 0
+	return unit ~= nil and self._units[unit.Id] == unit and unit:IsAlive()
 end
 
 function ManpowerService:GetUnitCombatPosition(target: any, now: number?): Vector3?
@@ -373,18 +429,7 @@ function ManpowerService:GetUnitCombatPosition(target: any, now: number?): Vecto
 		return nil
 	end
 
-	local segment = unit.Segment
-	if segment ~= nil then
-		local fromHex = self._gridByKey[segment.FromKey]
-		local toHex = self._gridByKey[segment.ToKey]
-		if fromHex ~= nil and toHex ~= nil then
-			local alpha = math.clamp(((now or os.clock()) - segment.StartedAt) / segment.Duration, 0, 1)
-			return fromHex.Center:Lerp(toHex.Center, alpha)
-		end
-	end
-
-	local currentHex = self._gridByKey[unit.CurrentHexKey]
-	return if currentHex ~= nil then currentHex.Center else nil
+	return unit:GetCombatPosition(self._gridByKey, now)
 end
 
 function ManpowerService:RequestQueueUnit(player: Player, request: any): any
@@ -509,14 +554,14 @@ function ManpowerService:DamageUnit(target: any, damage: any): { ok: boolean, re
 		return { ok = false, reason = "MissingUnit" }
 	end
 
-	unit.HP = math.max(0, unit.HP - damage)
-	if unit.HP <= 0 then
+	local result = unit:RecibirDanio(damage)
+	if result.died then
 		self:_destroyUnit(unit, "Dead")
 	end
 
 	return {
 		ok = true,
-		hp = unit.HP,
+		hp = result.hp,
 	}
 end
 
@@ -754,34 +799,17 @@ function ManpowerService:_spawnUnit(
 	self._nextUnitId += 1
 	self._nextNetId += 1
 	local unitId = `{unitType}_{owner.UserId}_{self._nextUnitId}`
-	local unitTrove = Trove.new()
-	self._trove:Add(unitTrove)
-	local unitStateMachine = StateMachine.new(ManpowerConfig.UnitStates.Idle, ManpowerConfig.UnitStateTransitions)
-	unitTrove:Add(unitStateMachine)
 
-	local unit = {
+	local unit = TropaTerrestre.new({
 		Id = unitId,
 		NetId = self._nextNetId,
 		Owner = owner,
 		UnitType = unitType,
 		Definition = definition,
-		HP = definition.HP or 1,
 		CurrentHexKey = spawnHex.Key,
 		SlotIndex = spawnSlot,
-		OrderDestinationKey = nil,
-		TargetHexKey = nil,
-		TargetSlotIndex = nil,
-		TargetReserved = false,
-		TargetDistance = 0,
-		Segment = nil,
-		AttemptedHexKey = nil,
-		LastHexChangedAt = os.clock(),
-		LastRepathAt = 0,
-		StuckFailures = 0,
-		OrderToken = 0,
-		StateMachine = unitStateMachine,
-		Trove = unitTrove,
-	}
+		Now = os.clock(),
+	})
 
 	self._units[unitId] = unit
 	self:_indexOwnerUnit(unit)
@@ -816,19 +844,14 @@ function ManpowerService:_assignMoveTargets(units: { UnitRecord }, destinationHe
 					break
 				end
 
-				unit.OrderDestinationKey = destinationHex.Key
-				unit.TargetHexKey = candidate.Key
-				unit.TargetSlotIndex = slotIndex
-				unit.TargetReserved = reserved
-				unit.TargetDistance = HexUtils.distance(candidate.Q, candidate.R, destinationHex.Q, destinationHex.R)
-				unit.LastHexChangedAt = now
-				unit.LastRepathAt = 0
-				unit.StuckFailures = 0
-				unit.AttemptedHexKey = nil
-				unit.OrderToken += 1
-				unit.StateMachine:TransitionTo(ManpowerConfig.UnitStates.Moving, {
-					Reason = "MoveOrder",
-				})
+				unit:SetMoveTarget(
+					destinationHex.Key,
+					candidate.Key,
+					slotIndex,
+					reserved,
+					HexUtils.distance(candidate.Q, candidate.R, destinationHex.Q, destinationHex.R),
+					now
+				)
 				self._activeUnits[unit.Id] = unit
 				commanded += 1
 				nextUnitIndex += 1
@@ -988,23 +1011,15 @@ function ManpowerService:_tryStartSegment(unit: UnitRecord, nextHex: HexRecord, 
 		self:_releaseReservation(nextHex.Key, unit.Id, slotIndex)
 		return false
 	end
+	if not self:_canHexesConnect(currentHex, nextHex) then
+		self:_releaseReservation(nextHex.Key, unit.Id, slotIndex)
+		return false
+	end
 
 	local distance = (nextHex.Center - currentHex.Center).Magnitude
-	local speed = getUnitSpeed(unit.Definition)
+	local speed = unit:GetSpeed()
 	local duration = math.max(distance / speed, ManpowerConfig.Movement.SimulationTickSeconds)
-	unit.Segment = {
-		FromKey = currentHex.Key,
-		ToKey = nextHex.Key,
-		SlotIndex = slotIndex,
-		StartedAt = now,
-		ArrivesAt = now + duration,
-		Duration = duration,
-	}
-	unit.AttemptedHexKey = nextHex.Key
-	unit.StateMachine:TransitionTo(ManpowerConfig.UnitStates.Moving, {
-		Reason = "SegmentStarted",
-		ToKey = nextHex.Key,
-	})
+	unit:StartSegment(currentHex.Key, nextHex.Key, slotIndex, now, duration)
 	self:_queueWaypoint(unit, currentHex.Key, nextHex.Key, slotIndex, duration)
 	return true
 end
@@ -1016,12 +1031,7 @@ function ManpowerService:_finishSegment(unit: UnitRecord, segment: MoveSegment, 
 
 	self:_releaseOccupiedSlot(segment.FromKey, unit)
 	self:_occupySlot(segment.ToKey, unit, segment.SlotIndex)
-	unit.CurrentHexKey = segment.ToKey
-	unit.SlotIndex = segment.SlotIndex
-	unit.Segment = nil
-	unit.AttemptedHexKey = nil
-	unit.LastHexChangedAt = now
-	unit.StuckFailures = 0
+	unit:FinishSegment(segment, now)
 
 	if unit.TargetHexKey == unit.CurrentHexKey then
 		unit.TargetReserved = false
@@ -1034,15 +1044,7 @@ function ManpowerService:_finishMoveOrder(unit: UnitRecord)
 		self:_releaseReservation(unit.TargetHexKey, unit.Id, unit.TargetSlotIndex)
 	end
 
-	unit.OrderDestinationKey = nil
-	unit.TargetHexKey = nil
-	unit.TargetSlotIndex = nil
-	unit.TargetReserved = false
-	unit.TargetDistance = 0
-	unit.AttemptedHexKey = nil
-	unit.StateMachine:TransitionTo(ManpowerConfig.UnitStates.Idle, {
-		Reason = "MoveFinished",
-	})
+	unit:FinishMoveOrder()
 	self._activeUnits[unit.Id] = nil
 end
 
@@ -1057,16 +1059,7 @@ function ManpowerService:_cancelMoveOrder(unit: UnitRecord, queueCorrection: boo
 		self:_releaseReservation(unit.TargetHexKey, unit.Id, unit.TargetSlotIndex)
 	end
 
-	unit.OrderDestinationKey = nil
-	unit.TargetHexKey = nil
-	unit.TargetSlotIndex = nil
-	unit.TargetReserved = false
-	unit.TargetDistance = 0
-	unit.AttemptedHexKey = nil
-	unit.OrderToken += 1
-	unit.StateMachine:TransitionTo(ManpowerConfig.UnitStates.Idle, {
-		Reason = "MoveCancelled",
-	})
+	unit:CancelMoveOrder()
 	self._activeUnits[unit.Id] = nil
 
 	if queueCorrection then
@@ -1184,7 +1177,11 @@ function ManpowerService:_getFlowField(destinationKey: string): FlowField?
 
 		for index = 1, #current.Neighbors do
 			local neighbor = current.Neighbors[index]
-			if distanceByKey[neighbor.Key] == nil and self:_isHexNavigationPassable(neighbor) then
+			if
+				distanceByKey[neighbor.Key] == nil
+				and self:_isHexNavigationPassable(neighbor)
+				and self:_canHexesConnect(current, neighbor)
+			then
 				distanceByKey[neighbor.Key] = currentDistance + 1
 				nextByKey[neighbor.Key] = current.Key
 				table.insert(open, neighbor)
@@ -1231,8 +1228,24 @@ function ManpowerService:_pruneTemporaryBlocks(now: number)
 	end
 end
 
+function ManpowerService:_canHexesConnect(fromHex: HexRecord, toHex: HexRecord): boolean
+	if not fromHex.Passable or not toHex.Passable or fromHex.Part.Parent == nil or toHex.Part.Parent == nil then
+		return false
+	end
+
+	if CollectionService:HasTag(fromHex.Part, GridConfig.BlockedHexTag or "BlockedHex") or CollectionService:HasTag(toHex.Part, GridConfig.BlockedHexTag or "BlockedHex") then
+		return false
+	end
+
+	return math.abs(fromHex.Center.Y - toHex.Center.Y) <= getMaxStepHeight()
+end
+
 function ManpowerService:_isHexNavigationPassable(hexRecord: HexRecord): boolean
 	if not hexRecord.Passable or hexRecord.Part.Parent == nil then
+		return false
+	end
+
+	if CollectionService:HasTag(hexRecord.Part, GridConfig.BlockedHexTag or "BlockedHex") then
 		return false
 	end
 
@@ -1282,6 +1295,7 @@ function ManpowerService:_occupySlot(hexKey: string, unit: UnitRecord, slotIndex
 	if occupancy.Reservations[slotIndex] == unit.Id then
 		occupancy.Reservations[slotIndex] = nil
 	end
+	self.UnitEnteredHex:Fire(unit, hexKey)
 end
 
 function ManpowerService:_releaseOccupiedSlot(hexKey: string, unit: UnitRecord)
@@ -1296,6 +1310,7 @@ function ManpowerService:_releaseOccupiedSlot(hexKey: string, unit: UnitRecord)
 		if occupancy.Slots[slotIndex] == unit.Id then
 			occupancy.Slots[slotIndex] = nil
 		end
+		self.UnitLeftHex:Fire(unit, hexKey)
 	end
 
 	self:_trimHexOccupancy(hexKey, occupancy)
@@ -1399,13 +1414,15 @@ function ManpowerService:_scanGridHex(instance: Instance)
 	local hexPart = instance :: BasePart
 	local coord = HexUtils.getHexCoordFromPart(hexPart, GridConfig)
 	local key = HexUtils.toKey(coord.q, coord.r)
+	local terrainType = getTerrainType(hexPart)
 	local record = {
 		Key = key,
 		Part = hexPart,
 		Q = coord.q,
 		R = coord.r,
 		Center = HexUtils.getHexTopCenterFromPart(hexPart),
-		Passable = ManpowerConfig.TerrainPassable[getTerrainType(hexPart)] == true,
+		TerrainType = terrainType,
+		Passable = isTerrainPassableForTerrestrial(terrainType),
 		Neighbors = {},
 	}
 
@@ -1419,7 +1436,7 @@ function ManpowerService:_rebuildHexNeighbors()
 		for directionIndex = 1, 6 do
 			local neighborCoord = HexUtils.getNeighbor(record.Q, record.R, directionIndex)
 			local neighbor = self._gridByKey[HexUtils.toKey(neighborCoord.q, neighborCoord.r)]
-			if neighbor ~= nil then
+			if neighbor ~= nil and self:_canHexesConnect(record, neighbor) then
 				table.insert(record.Neighbors, neighbor)
 			end
 		end
@@ -1484,7 +1501,7 @@ function ManpowerService:_destroyUnit(unit: UnitRecord, reason: string)
 	self:_unindexOwnerUnit(unit)
 	self:_releaseOccupiedSlot(unit.CurrentHexKey, unit)
 	self.UnitDestroyed:Fire(unit)
-	unit.Trove:Destroy()
+	unit:Destroy()
 	self._resourceService:ReleaseUnitPopulation(unit.Owner, unit.Definition.Population or 0)
 	self.Client.UnitDestroyed:FireAll({
 		NetId = unit.NetId,
@@ -1506,6 +1523,7 @@ end
 
 function ManpowerService:_handlePlayerRemoving(player: Player)
 	self._lastRequestAt[player] = nil
+	self._armyPhaseByPlayer[player] = nil
 
 	local queues = {}
 	for _, queue in self._queues do
@@ -1564,6 +1582,7 @@ function ManpowerService:Destroy()
 	table.clear(self._temporaryBlocks)
 	table.clear(self._flowFields)
 	table.clear(self._lastRequestAt)
+	table.clear(self._armyPhaseByPlayer)
 	table.clear(self._pendingWaypoints)
 end
 
