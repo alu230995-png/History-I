@@ -6,6 +6,7 @@ local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForCh
 local UIHelpers = require(script.Parent:WaitForChild("UIHelpers"))
 
 local colors = UITheme.Colors
+local aspectRatios = UITheme.AspectRatios
 local sizes = UITheme.Sizes
 local strokes = UITheme.Strokes
 local transparency = UITheme.Transparency
@@ -23,11 +24,29 @@ local function IconFrame(props)
 		BackgroundTransparency = props.backgroundTransparency or transparency.PanelMuted,
 		BorderSizePixel = 0,
 	}, {
+		AspectRatio = if props.aspectRatio == nil
+			then nil
+			else React.createElement("UIAspectRatioConstraint", {
+				AspectRatio = props.aspectRatio or aspectRatios.Icon,
+				DominantAxis = props.DominantAxis or Enum.DominantAxis.Height,
+			}),
 		Corner = if props.radius ~= nil
 			then React.createElement("UICorner", {
 				CornerRadius = props.radius,
 			})
 			else nil,
+		LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, colors.PanelFacet),
+				ColorSequenceKeypoint.new(0.55, props.backgroundColor or colors.Panel),
+				ColorSequenceKeypoint.new(1, colors.PanelFacetDark),
+			}),
+			Rotation = props.gradientRotation or 36,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, transparency.Facet),
+				NumberSequenceKeypoint.new(1, transparency.FacetStrong),
+			}),
+		}),
 		Stroke = if props.stroke == false
 			then nil
 			else React.createElement("UIStroke", {

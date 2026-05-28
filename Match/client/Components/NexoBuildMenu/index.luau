@@ -56,15 +56,17 @@ local function BuildingCard(props)
 	local canAfford = gold >= item.Gold
 	local compact = props.compact == true
 	local textColor = if canAfford then colors.Text else colors.MutedText
+	local cardColor = if canAfford then colors.PanelRaised else colors.PanelDim
 
 	return React.createElement("TextButton", {
 		LayoutOrder = props.LayoutOrder,
-		BackgroundColor3 = if canAfford then colors.PanelRaised else colors.PanelDim,
+		BackgroundColor3 = cardColor,
 		BackgroundTransparency = if canAfford then transparency.PanelLight else transparency.PanelDim,
 		BorderSizePixel = 0,
 		AutoButtonColor = canAfford,
 		Text = "",
 		Active = canAfford,
+		ClipsDescendants = true,
 		[React.Event.Activated] = if canAfford
 			then function()
 				onSelect(item.Type)
@@ -78,6 +80,20 @@ local function BuildingCard(props)
 			Color = if canAfford then colors.Stroke else colors.Red,
 			Thickness = px(UITheme.Strokes.Thin),
 			Transparency = if canAfford then transparency.StrokeSoft else transparency.StrokeStrong,
+		}),
+		LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, colors.PanelFacetCold),
+				ColorSequenceKeypoint.new(0.48, if canAfford then colors.PanelRaised else colors.PanelDim),
+				ColorSequenceKeypoint.new(0.76, if canAfford then colors.Amber else colors.Red),
+				ColorSequenceKeypoint.new(1, colors.PanelFacetDark),
+			}),
+			Rotation = if compact then -18 else -34,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, transparency.Facet),
+				NumberSequenceKeypoint.new(0.7, transparency.PanelLight),
+				NumberSequenceKeypoint.new(1, if canAfford then transparency.FacetStrong else transparency.Disabled),
+			}),
 		}),
 		Padding = React.createElement("UIPadding", {
 			PaddingTop = UDim.new(0, px(spacing.Panel)),
@@ -100,6 +116,7 @@ local function BuildingCard(props)
 			TextColor3 = textColor,
 			TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
 			TextWrapped = true,
+			TextScaled = compact,
 		}),
 		IconContainer = React.createElement(IconFrame, {
 			LayoutOrder = 2,
@@ -107,20 +124,40 @@ local function BuildingCard(props)
 			height = if compact then sizes.IconContainerCompactHeight else sizes.IconContainerHeight,
 			backgroundColor = colors.Panel,
 			backgroundTransparency = transparency.PanelMuted,
-			strokeColor = colors.Stroke,
+			strokeColor = if canAfford then colors.Stroke else colors.Red,
 			strokeTransparency = transparency.StrokeMuted,
+			aspectRatio = UITheme.AspectRatios.Icon,
 			image = item.Icon,
 			imageColor = textColor,
 			imageTransparency = if canAfford then transparency.Solid else transparency.IconDisabled,
 			iconSize = if compact then sizes.IconCardCompact else sizes.IconCard,
 		}),
-		Price = React.createElement(Text, {
+		CostBadge = React.createElement("Frame", {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, if compact then px(textSizes.Heading) else px(spacing.Bottom)),
-			variant = "Value",
-			Text = `{item.Gold} ORO`,
-			TextColor3 = if canAfford then colors.Amber else colors.Red,
-			TextSize = if compact then textSizes.ButtonSmall else textSizes.Meta,
+			Size = UDim2.new(1, 0, 0, if compact then px(textSizes.Heading) else px(spacing.Bottom + spacing.Sm)),
+			BackgroundColor3 = if canAfford then colors.PanelFacetCold else colors.PanelDim,
+			BackgroundTransparency = 0.25,
+			BorderSizePixel = 0,
+		}, {
+			Corner = React.createElement("UICorner", {
+				CornerRadius = UITheme.Radii.Control,
+			}),
+			Stroke = React.createElement("UIStroke", {
+				Color = if canAfford then colors.Amber else colors.Red,
+				Thickness = px(1),
+				Transparency = 0.5,
+			}),
+			Layout = React.createElement("UIListLayout", {
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+			}),
+			Text = React.createElement(Text, {
+				Size = UDim2.fromScale(1, 1),
+				variant = "Mono",
+				Text = `{item.Gold} ORO`,
+				TextColor3 = if canAfford then colors.Amber else colors.Red,
+				TextSize = if compact then textSizes.ButtonSmall - 1 else textSizes.Meta - 1,
+			}),
 		}),
 	})
 end
@@ -135,57 +172,54 @@ local function NexoBuildMenu(props)
 	local panelWidth = if compact
 		then math.max(
 			px(sizes.NexoBuildCompactMinWidth),
-			math.min(px(sizes.NexoBuildCompactMaxWidth), viewportSize.X - px(spacing.Bottom + spacing.Xxs))
+			math.min(px(sizes.NexoBuildMobileWidth), viewportSize.X - px(spacing.Bottom + spacing.Xxs))
 		)
 		else px(sizes.NexoBuildPanelWidth)
 	local panelHeight = if compact
 		then math.max(
 			px(sizes.NexoBuildCompactMinHeight),
-			math.min(px(sizes.NexoBuildCompactMaxHeight), viewportSize.Y - px(sizes.ButtonWideWidth + spacing.Lg))
+			math.min(px(sizes.NexoBuildMobileHeight), viewportSize.Y - px(sizes.ButtonWideWidth + spacing.Lg))
 		)
 		else px(sizes.NexoBuildPanelHeight)
 	local headerHeight = if compact then px(sizes.ButtonCompactHeight + spacing.Xxs) else px(sizes.ButtonLargeHeight)
-	local scrollHeight = math.max(
-		px(sizes.ButtonBuildMaxWidth + spacing.Bottom),
-		panelHeight - headerHeight - px(sizes.IconContainerCompactWidth + spacing.Sm)
-	)
+	local scrollHeight = panelHeight - headerHeight - px(spacing.Loose * 2 + spacing.Panel)
 	local cellHeight = if compact then px(sizes.BuildingCardCompactHeight) else px(sizes.BuildingCardHeight)
-
-	local children = {
-		Grid = React.createElement("UIGridLayout", {
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			FillDirection = Enum.FillDirection.Horizontal,
-			FillDirectionMaxCells = if compact then 1 else 2,
-			CellPadding = UDim2.fromOffset(px(spacing.XXl), if compact then px(spacing.Lg) else px(spacing.XXl)),
-			CellSize = if compact
-				then UDim2.new(1, -px(spacing.Lg), 0, cellHeight)
-				else UDim2.new(0.5, -px(spacing.Sm), 0, cellHeight),
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingRight = UDim.new(0, px(spacing.Lg)),
-		}),
-	}
-
-	for index, item in BUILDING_ITEMS do
-		children[item.Type] = React.createElement(BuildingCard, {
-			LayoutOrder = index,
-			item = item,
-			resources = props.resources,
-			compact = compact,
-			onSelectBuilding = props.onSelectBuilding,
-		})
-	end
-
-	return React.createElement("Frame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = colors.Scrim,
-		BackgroundTransparency = transparency.ScrimStrong,
-		BorderSizePixel = 0,
-		Active = true,
-	}, {
+ 
+ 	local children = {
+ 		Grid = React.createElement("UIGridLayout", {
+ 			SortOrder = Enum.SortOrder.LayoutOrder,
+ 			FillDirection = Enum.FillDirection.Horizontal,
+ 			FillDirectionMaxCells = if compact then 1 else 2,
+ 			CellPadding = UDim2.fromOffset(px(spacing.XXl), if compact then px(spacing.Lg) else px(spacing.XXl)),
+ 			CellSize = if compact
+ 				then UDim2.new(1, -px(spacing.Lg), 0, cellHeight)
+ 				else UDim2.new(0.5, -px(spacing.Sm), 0, cellHeight),
+ 		}),
+ 		Padding = React.createElement("UIPadding", {
+ 			PaddingRight = UDim.new(0, px(spacing.Lg)),
+ 		}),
+ 	}
+ 
+ 	for index, item in BUILDING_ITEMS do
+ 		children[item.Type] = React.createElement(BuildingCard, {
+ 			LayoutOrder = index,
+ 			item = item,
+ 			resources = props.resources,
+ 			compact = compact,
+ 			onSelectBuilding = props.onSelectBuilding,
+ 		})
+ 	end
+ 
+ 	return React.createElement("Frame", {
+ 		Size = UDim2.fromScale(1, 1),
+ 		BackgroundColor3 = colors.Scrim,
+ 		BackgroundTransparency = 0.85, -- Sleek, very subtle dark vignette
+ 		BorderSizePixel = 0,
+ 		Active = false,
+ 	}, {
 		NexoBuildPanel = React.createElement(Panel, {
-			AnchorPoint = if compact then Vector2.new(1, 0.5) else Vector2.new(0.5, 0.5),
-			Position = if compact then UDim2.new(1, -px(spacing.Wide), 0.5, 0) else UDim2.fromScale(0.5, 0.5),
+			AnchorPoint = if compact then Vector2.new(1, 1) else Vector2.new(0.5, 0.5),
+			Position = if compact then UDim2.new(1, -px(spacing.Lg), 1, -px(spacing.Bottom)) else UDim2.fromScale(0.5, 0.5),
 			Size = if compact
 				then UDim2.fromOffset(panelWidth, panelHeight)
 				else UDim2.new(1, -px(spacing.Bottom + spacing.Xxs), 0, px(sizes.NexoBuildPanelHeight)),
@@ -193,6 +227,7 @@ local function NexoBuildMenu(props)
 			backgroundTransparency = transparency.PanelLight,
 			strokeColor = colors.Amber,
 			strokeTransparency = transparency.StrokeStrong,
+			gradientMid = colors.PanelFacet,
 			padding = spacing.Loose,
 			layout = Enum.FillDirection.Vertical,
 			gap = spacing.Panel,

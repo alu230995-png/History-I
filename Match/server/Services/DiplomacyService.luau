@@ -395,6 +395,7 @@ function DiplomacyService:_createSnapshot(player: Player): any
 				requesterUserId = breakRecord.RequesterUserId,
 				targetUserId = breakRecord.TargetUserId,
 				endsAt = breakRecord.EndsAt,
+				remainingSeconds = math.max(0, math.ceil(breakRecord.EndsAt - os.clock())),
 			})
 		end
 	end

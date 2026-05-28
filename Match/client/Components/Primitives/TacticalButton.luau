@@ -4,9 +4,9 @@ local React = require(ReplicatedStorage:WaitForChild("Packages"):WaitForChild("R
 
 local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForChild("UITheme"))
 local UIHelpers = require(script.Parent:WaitForChild("UIHelpers"))
+local Text = require(script.Parent:WaitForChild("Text"))
 
 local colors = UITheme.Colors
-local fonts = UITheme.Fonts
 local radii = UITheme.Radii
 local sizes = UITheme.Sizes
 local spacing = UITheme.Spacing
@@ -19,8 +19,7 @@ local function TacticalButton(props)
 	local accent = props.accent or colors.Stroke
 	local height = props.height or sizes.ButtonHeight
 	local width = props.width
-	local backgroundColor = props.backgroundColor or (if enabled then colors.PanelRaised else colors.PanelDisabled)
-	local textColor = props.TextColor3 or (if enabled then colors.Text else colors.MutedText)
+	local backgroundColor = props.backgroundColor or (if enabled then colors.PanelFacet else colors.PanelDisabled)
 	local size = props.Size
 		or if props.fullWidth == true
 			then UDim2.new(1, 0, 0, UIHelpers.value(height))
@@ -29,10 +28,55 @@ local function TacticalButton(props)
 		Corner = React.createElement("UICorner", {
 			CornerRadius = props.radius or radii.Control,
 		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = accent,
-			Thickness = UIHelpers.value(props.strokeThickness or strokes.Thin),
-			Transparency = if enabled then props.strokeTransparency or transparency.Stroke else transparency.Disabled,
+		Stroke = React.createElement(
+			"UIStroke",
+			{
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Color = if enabled then Color3.new(1, 1, 1) else colors.Stroke,
+				Thickness = UIHelpers.value(props.strokeThickness or strokes.Thin),
+				Transparency = if enabled
+					then props.strokeTransparency or transparency.Stroke
+					else transparency.Disabled,
+			},
+			if enabled
+				then {
+					StrokeGradient = React.createElement("UIGradient", {
+						Color = ColorSequence.new({
+							ColorSequenceKeypoint.new(0, colors.PanelFacet),
+							ColorSequenceKeypoint.new(0.5, props.gradientAccent or accent),
+							ColorSequenceKeypoint.new(1, colors.PanelFacet),
+						}),
+						Rotation = props.gradientRotation or -32,
+					}),
+				}
+				else nil
+		),
+		LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, if enabled then colors.PanelPressed else colors.PanelFacetCold),
+				ColorSequenceKeypoint.new(0.42, backgroundColor),
+				ColorSequenceKeypoint.new(0.7, props.gradientAccent or accent),
+				ColorSequenceKeypoint.new(1, if enabled then colors.PanelRaised else colors.PanelFacetDark),
+			}),
+			Rotation = props.gradientRotation or -32,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, if enabled then transparency.Facet else transparency.Disabled),
+				NumberSequenceKeypoint.new(0.58, transparency.PanelLight),
+				NumberSequenceKeypoint.new(1, if enabled then transparency.FacetStrong else transparency.Disabled),
+			}),
+		}),
+		ButtonText = React.createElement(Text, {
+			Size = UDim2.fromScale(1, 1),
+			variant = "Button",
+			Text = props.label or props.Text or "",
+			TextColor3 = props.TextColor3 or (if enabled then colors.Text else colors.MutedText),
+			TextSize = props.TextSize or textSizes.Button,
+			TextScaled = props.TextScaled == true,
+			TextWrapped = props.TextWrapped ~= false,
+			TextTruncate = props.TextTruncate,
+			TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Center,
+			TextYAlignment = props.TextYAlignment or Enum.TextYAlignment.Center,
+			ZIndex = if props.ZIndex then props.ZIndex + 1 else 2,
 		}),
 	}
 
@@ -54,6 +98,13 @@ local function TacticalButton(props)
 		})
 	end
 
+	if props.aspectRatio ~= nil then
+		children.AspectRatio = React.createElement("UIAspectRatioConstraint", {
+			AspectRatio = props.aspectRatio,
+			DominantAxis = props.DominantAxis or Enum.DominantAxis.Height,
+		})
+	end
+
 	return React.createElement("TextButton", {
 		LayoutOrder = props.LayoutOrder,
 		AnchorPoint = props.AnchorPoint,
@@ -63,16 +114,10 @@ local function TacticalButton(props)
 		BackgroundColor3 = backgroundColor,
 		BackgroundTransparency = props.backgroundTransparency or transparency.Solid,
 		BorderSizePixel = 0,
+		ZIndex = props.ZIndex,
 		AutoButtonColor = enabled,
 		Active = enabled,
-		Font = props.Font or fonts.Heading,
-		Text = props.label or props.Text or "",
-		TextColor3 = textColor,
-		TextSize = UIHelpers.value(props.TextSize or textSizes.Button),
-		TextWrapped = props.TextWrapped ~= false,
-		TextTruncate = props.TextTruncate,
-		TextXAlignment = props.TextXAlignment,
-		TextYAlignment = props.TextYAlignment,
+		Text = "", -- Make text empty so the gradient doesn't tint it!
 		[React.Event.Activated] = if enabled then props.onActivated or props.activated else nil,
 	}, children)
 end

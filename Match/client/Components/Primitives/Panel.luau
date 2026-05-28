@@ -6,6 +6,7 @@ local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForCh
 local UIHelpers = require(script.Parent:WaitForChild("UIHelpers"))
 
 local colors = UITheme.Colors
+local aspectRatios = UITheme.AspectRatios
 local radii = UITheme.Radii
 local spacing = UITheme.Spacing
 local strokes = UITheme.Strokes
@@ -68,6 +69,30 @@ local function mergeChildren(props, children)
 		})
 	end
 
+	if props.gradient ~= false then
+		panelChildren.LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, props.gradientStart or colors.PanelFacetCold),
+				ColorSequenceKeypoint.new(0.38, props.backgroundColor or colors.Panel),
+				ColorSequenceKeypoint.new(0.66, props.gradientMid or colors.PanelRaised),
+				ColorSequenceKeypoint.new(1, props.gradientEnd or colors.PanelFacetDark),
+			}),
+			Rotation = props.gradientRotation or -28,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, props.gradientTransparency or transparency.Facet),
+				NumberSequenceKeypoint.new(0.5, transparency.PanelLight),
+				NumberSequenceKeypoint.new(1, props.gradientTransparency or transparency.FacetStrong),
+			}),
+		})
+	end
+
+	if props.aspectRatio ~= nil then
+		panelChildren.AspectRatio = React.createElement("UIAspectRatioConstraint", {
+			AspectRatio = props.aspectRatio or aspectRatios.PanelCommand,
+			DominantAxis = props.DominantAxis or Enum.DominantAxis.Width,
+		})
+	end
+
 	panelChildren.Padding = makePadding(props.padding)
 	panelChildren.Layout = makeLayout(props)
 
@@ -90,6 +115,7 @@ local function Panel(props)
 		BackgroundColor3 = props.backgroundColor or colors.Panel,
 		BackgroundTransparency = props.backgroundTransparency or transparency.Panel,
 		BorderSizePixel = 0,
+		ZIndex = props.ZIndex,
 		Active = props.Active,
 		Visible = props.Visible,
 		ClipsDescendants = props.ClipsDescendants,

@@ -23,6 +23,11 @@ function PointerTracker:_getMousePosition(): Vector2?
 	return nil
 end
 
+function PointerTracker:_getPreciseTouchPosition(input: InputObject): Vector2
+	local mousePosition = self:_getMousePosition()
+	return mousePosition or getInputPosition(input)
+end
+
 function PointerTracker:BeginInput(input: InputObject): Vector2?
 	if input.UserInputType == Enum.UserInputType.Touch then
 		if self._activeTouch ~= nil and self._activeTouch ~= input then
@@ -30,7 +35,7 @@ function PointerTracker:BeginInput(input: InputObject): Vector2?
 		end
 
 		self._activeTouch = input
-		local position = getInputPosition(input)
+		local position = self:_getPreciseTouchPosition(input)
 		self._lastPointerPosition = position
 		return position
 	end
@@ -56,7 +61,7 @@ function PointerTracker:UpdateInput(input: InputObject): Vector2?
 			return nil
 		end
 
-		local position = getInputPosition(input)
+		local position = self:_getPreciseTouchPosition(input)
 		self._lastPointerPosition = position
 		return position
 	end

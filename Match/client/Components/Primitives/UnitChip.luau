@@ -33,8 +33,24 @@ local function UnitChip(props)
 		Text = "",
 		[React.Event.Activated] = if enabled then props.onActivated else nil,
 	}, {
+		AspectRatio = React.createElement("UIAspectRatioConstraint", {
+			AspectRatio = UITheme.AspectRatios.Icon,
+			DominantAxis = Enum.DominantAxis.Height,
+		}),
 		Corner = React.createElement("UICorner", {
 			CornerRadius = props.radius or radii.Control,
+		}),
+		LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, colors.PanelFacetCold),
+				ColorSequenceKeypoint.new(0.58, props.backgroundColor or colors.PanelRaised),
+				ColorSequenceKeypoint.new(1, colors.PanelFacetDark),
+			}),
+			Rotation = -28,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, transparency.Facet),
+				NumberSequenceKeypoint.new(1, transparency.FacetStrong),
+			}),
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = props.strokeColor or colors.Text,

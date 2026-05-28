@@ -6,7 +6,7 @@ local UITheme = require(script.Parent.Parent.Parent:WaitForChild("UI"):WaitForCh
 local IconFrame = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("IconFrame"))
 local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Panel"))
 local ProgressBar = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("ProgressBar"))
-local StatTile = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("StatTile"))
+local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
 local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
 local UIHelpers = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("UIHelpers"))
 
@@ -17,6 +17,64 @@ local sizes = UITheme.Sizes
 local spacing = UITheme.Spacing
 local textSizes = UITheme.TextSizes
 local transparency = UITheme.Transparency
+
+local function CompactStat(props)
+	local compact = props.compact == true
+
+	return React.createElement("Frame", {
+		LayoutOrder = props.LayoutOrder,
+		Size = UDim2.new(1, 0, 0, px(if compact then 22 else 26)),
+		BackgroundTransparency = 1,
+	}, {
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, px(spacing.Sm)),
+		}),
+		Indicator = React.createElement("Frame", {
+			LayoutOrder = 1,
+			Size = UDim2.fromOffset(px(4), px(if compact then 12 else 15)),
+			BackgroundColor3 = props.accent or colors.Stroke,
+			BorderSizePixel = 0,
+		}, {
+			Corner = React.createElement("UICorner", {
+				CornerRadius = radii.Circle,
+			}),
+		}),
+		Label = React.createElement(Text, {
+			LayoutOrder = 2,
+			Size = UDim2.fromOffset(0, 0), -- Force automatic width to avoid stretching out
+			AutomaticSize = Enum.AutomaticSize.XY,
+			variant = "Label",
+			Text = props.label or "",
+			TextColor3 = colors.Text, -- Brighter and high visibility
+			TextSize = if compact then textSizes.Small else textSizes.Button,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		Value = React.createElement(Text, {
+			LayoutOrder = 3,
+			Size = UDim2.fromOffset(0, 0),
+			AutomaticSize = Enum.AutomaticSize.XY,
+			variant = "Mono",
+			Text = props.value or "",
+			TextColor3 = colors.Text,
+			TextSize = if compact then textSizes.Small else textSizes.Button,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+	})
+end
+
+local function SeparatorLine(layoutOrder: number)
+	return React.createElement("Frame", {
+		LayoutOrder = layoutOrder,
+		Size = UDim2.new(1, 0, 0, px(1)),
+		BackgroundColor3 = colors.Stroke,
+		BackgroundTransparency = 0.45, -- Highly visible crisp gray separator
+		BorderSizePixel = 0,
+	})
+end
 
 local function getResourceNumber(resources, key: string): number
 	local value = if resources ~= nil then resources[key] else nil
@@ -73,45 +131,46 @@ local function nexoHealth(nexo, layoutOrder: number, compact: boolean?)
 		then nexo.displayName
 		else "NEXO"
 
-	return React.createElement(Panel, {
+	return React.createElement("Frame", {
 		LayoutOrder = layoutOrder,
-		AutomaticSize = Enum.AutomaticSize.XY,
-		backgroundColor = colors.PanelRaised,
-		backgroundTransparency = transparency.PanelSoft,
-		strokeColor = accent,
-		strokeTransparency = transparency.StrokeSoft,
-		radius = radii.Control,
-		padding = {
-			Y = if compact then spacing.Sm else spacing.Xl,
-			X = if compact then spacing.Xl else spacing.Xs + spacing.Lg,
-		},
-		layout = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		gap = spacing.Sm,
-		children = {
+		Size = UDim2.new(1, 0, 0, px(if compact then 30 else 36)),
+		BackgroundTransparency = 1,
+	}, {
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, px(spacing.Xxs)),
+		}),
+		Header = React.createElement("Frame", {
+			LayoutOrder = 1,
+			Size = UDim2.new(1, 0, 0, px(if compact then 14 else 18)),
+			BackgroundTransparency = 1,
+		}, {
 			Label = React.createElement(Text, {
-				LayoutOrder = 1,
-				AutomaticSize = Enum.AutomaticSize.XY,
+				Size = UDim2.fromScale(0.5, 1),
 				variant = "Label",
 				Text = string.upper(displayName),
-				TextSize = if compact then textSizes.Tiny else textSizes.Small,
+				TextColor3 = colors.Text, -- Brighter and high visibility
+				TextSize = if compact then textSizes.Small else textSizes.Button,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 			Value = React.createElement(Text, {
-				LayoutOrder = 2,
-				AutomaticSize = Enum.AutomaticSize.XY,
-				variant = "Value",
+				Position = UDim2.fromScale(0.5, 0),
+				Size = UDim2.fromScale(0.5, 1),
+				variant = "Mono",
 				Text = `{hp} / {maxHp}`,
-				TextSize = if compact then textSizes.ButtonSmall else textSizes.Body,
-				TextXAlignment = Enum.TextXAlignment.Left,
+				TextColor3 = accent,
+				TextSize = if compact then textSizes.Small else textSizes.Button,
+				TextXAlignment = Enum.TextXAlignment.Right,
 			}),
-			Track = React.createElement(ProgressBar, {
-				LayoutOrder = 3,
-				Size = UDim2.new(1, 0, 0, px(sizes.HealthTrack)),
-				progress = ratio,
-				fillColor = accent,
-			}),
-		},
+		}),
+		Track = React.createElement(ProgressBar, {
+			LayoutOrder = 2,
+			Size = UDim2.new(1, 0, 0, px(if compact then 4 else 5)),
+			progress = ratio,
+			fillColor = accent,
+		}),
 	})
 end
 
@@ -150,26 +209,126 @@ local function getRosterColor(snapshot, userId: number): Color3
 	return palette[((colorIndex - 1) % paletteCount) + 1]
 end
 
-local function playerPip(playerCard, diplomacySnapshot, layoutOrder: number, compact: boolean?)
-	local accent = getRosterColor(diplomacySnapshot, playerCard.userId)
+local function rosterDiplomacyActions(props)
+	local state = props.state
+	if state == nil or state.userId ~= props.userId then
+		return nil
+	end
+
+	local compact = props.compact == true
+	local pendingBreakEndsAt = state.pendingBreakEndsAt
+	local actionLabel = state.actionLabel or "ALIANZA"
+	local actionEnabled = state.actionEnabled == true
+	if typeof(pendingBreakEndsAt) == "number" then
+		local remainingSeconds = math.max(0, math.ceil(pendingBreakEndsAt - os.clock()))
+		actionLabel = `ROMPIENDO {remainingSeconds}s`
+		actionEnabled = false
+	end
+
+	return React.createElement(Panel, {
+		LayoutOrder = 2,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromOffset(px(if compact then 132 else 152), 0),
+		backgroundColor = colors.Panel,
+		backgroundTransparency = transparency.PanelSoft,
+		strokeColor = if state.isAllied then colors.Red else colors.Amber,
+		strokeTransparency = transparency.StrokeStrong,
+		padding = {
+			Y = spacing.Xl,
+			X = spacing.Xl,
+		},
+		layout = Enum.FillDirection.Vertical,
+		gap = spacing.Lg,
+		Active = true,
+		children = {
+			Action = React.createElement(TacticalButton, {
+				LayoutOrder = 1,
+				fullWidth = true,
+				height = sizes.MinTouch,
+				label = actionLabel,
+				accent = if state.actionKind == "Break" or state.actionKind == "BreakPending"
+					then colors.Red
+					else colors.Green,
+				enabled = actionEnabled,
+				TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
+				onActivated = function()
+					if props.onAction ~= nil then
+						props.onAction(props.userId)
+					end
+				end,
+			}),
+			Close = React.createElement(TacticalButton, {
+				LayoutOrder = 2,
+				fullWidth = true,
+				height = sizes.MinTouch,
+				label = "CERRAR",
+				accent = colors.Stroke,
+				TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
+				onActivated = props.onClose,
+			}),
+		},
+	})
+end
+
+local function playerPip(props)
+	local playerCard = props.playerCard
+	local compact = props.compact == true
+	local accent = getRosterColor(props.diplomacySnapshot, playerCard.userId)
 	local image = if typeof(playerCard.thumbnail) == "string" then playerCard.thumbnail else ""
 	local avatarSize = if compact then sizes.AvatarCompact else sizes.Avatar
 	local imageSize = if compact then sizes.AvatarImageCompact else sizes.AvatarImage
+	local isLocalPlayer = playerCard.userId == props.localUserId
+	local canSelect = not isLocalPlayer
+	local selected = props.rosterDiplomacy ~= nil and props.rosterDiplomacy.userId == playerCard.userId
 
-	return React.createElement(IconFrame, {
-		LayoutOrder = layoutOrder,
-		width = avatarSize,
-		height = avatarSize,
-		backgroundColor = colors.PanelRaised,
-		backgroundTransparency = transparency.Solid,
-		strokeColor = accent,
-		strokeThickness = UITheme.Strokes.Avatar,
-		strokeTransparency = transparency.PanelLight,
-		radius = radii.Circle,
-		image = image,
-		imageColor = colors.Text,
-		iconSize = imageSize,
-		iconRadius = radii.Circle,
+	return React.createElement("Frame", {
+		LayoutOrder = props.LayoutOrder,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromOffset(px(if selected then (if compact then 132 else 152) else avatarSize), 0),
+		BackgroundTransparency = transparency.Clear,
+	}, {
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Top,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, px(spacing.Md)),
+		}),
+		Button = React.createElement("TextButton", {
+			LayoutOrder = 1,
+			Size = UDim2.fromOffset(px(avatarSize), px(avatarSize)),
+			BackgroundTransparency = transparency.Clear,
+			BorderSizePixel = 0,
+			AutoButtonColor = canSelect,
+			Active = canSelect,
+			Text = "",
+			[React.Event.Activated] = if canSelect and props.onSelect ~= nil
+				then function()
+					props.onSelect(playerCard.userId)
+				end
+				else nil,
+		}, {
+			Avatar = React.createElement(IconFrame, {
+				Size = UDim2.fromScale(1, 1),
+				backgroundColor = if selected then colors.PanelFacet else colors.PanelRaised,
+				backgroundTransparency = transparency.Solid,
+				strokeColor = accent,
+				strokeThickness = if selected then UITheme.Strokes.Avatar + 1 else UITheme.Strokes.Avatar,
+				strokeTransparency = if selected then transparency.Solid else transparency.PanelLight,
+				radius = radii.Circle,
+				image = image,
+				imageColor = colors.Text,
+				iconSize = imageSize,
+				iconRadius = radii.Circle,
+			}),
+		}),
+		Actions = rosterDiplomacyActions({
+			userId = playerCard.userId,
+			state = props.rosterDiplomacy,
+			compact = compact,
+			onAction = props.onAction,
+			onClose = props.onClose,
+		}),
 	})
 end
 
@@ -179,7 +338,7 @@ local function topRoster(props)
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Top,
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, px(if compact then spacing.Md else spacing.XXl)),
 		}),
@@ -187,39 +346,51 @@ local function topRoster(props)
 
 	local playerCards = if type(props.playerCards) == "table" then props.playerCards else {}
 	for index = 1, #playerCards do
-		children[`Player{index}`] = playerPip(playerCards[index], props.diplomacySnapshot, index, compact)
+		children[`Player{index}`] = playerPip({
+			LayoutOrder = index,
+			playerCard = playerCards[index],
+			diplomacySnapshot = props.diplomacySnapshot,
+			rosterDiplomacy = props.rosterDiplomacy,
+			localUserId = props.localUserId,
+			compact = compact,
+			onSelect = props.onSelectPlayer,
+			onAction = props.onAction,
+			onClose = props.onClose,
+		})
 	end
 
 	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, px(if compact then spacing.Lg else spacing.Wide)),
+		Position = UDim2.new(0.5, 0, 0, px(if compact then spacing.Sm else spacing.Wide)),
 		AutomaticSize = Enum.AutomaticSize.XY,
 		backgroundColor = colors.Panel,
 		backgroundTransparency = transparency.PanelSoft,
-		strokeColor = colors.Stroke,
-		strokeTransparency = transparency.Stroke,
+		strokeColor = colors.Amber, -- Glowing Amber stroke to highlight current match status/timer
+		strokeTransparency = transparency.StrokeStrong,
+		gradientMid = colors.PanelFacetCold,
 		padding = {
-			Y = if compact then spacing.Md else spacing.Xl,
-			X = if compact then spacing.Xl else spacing.Panel,
+			Y = if compact then spacing.Xs else spacing.Sm,
+			X = if compact then spacing.Lg else spacing.Wide,
 		},
-		layout = Enum.FillDirection.Vertical,
-		gap = if compact then spacing.Xs else spacing.Md,
+		layout = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		gap = if compact then spacing.Md else spacing.XXl,
 		Active = false,
 		children = {
-			Clock = React.createElement(Text, {
+			Score = React.createElement(Text, {
 				LayoutOrder = 1,
 				AutomaticSize = Enum.AutomaticSize.XY,
-				variant = "Value",
-				Text = formatDate(props.clock),
-				TextColor3 = colors.Amber,
-				TextSize = if compact then textSizes.Button else textSizes.Value,
-			}),
-			Score = React.createElement(Text, {
-				LayoutOrder = 2,
-				AutomaticSize = Enum.AutomaticSize.XY,
-				variant = "Title",
+				variant = "Mono",
 				Text = "3VS3",
-				TextSize = if compact then textSizes.Small else textSizes.Button,
+				TextColor3 = colors.Amber,
+				TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
+			}),
+			Separator = React.createElement("Frame", {
+				LayoutOrder = 2,
+				Size = UDim2.fromOffset(px(1), px(if compact then 12 else 16)),
+				BackgroundColor3 = colors.Stroke,
+				BackgroundTransparency = transparency.StrokeMuted,
+				BorderSizePixel = 0,
 			}),
 			Roster = React.createElement("Frame", {
 				LayoutOrder = 3,
@@ -243,49 +414,62 @@ local function MatchHud(props)
 	local leftPanel = React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0, 0),
 		Position = if compact
-			then UDim2.fromOffset(px(spacing.XXl), px(sizes.ButtonLargeHeight))
+			then UDim2.fromOffset(px(spacing.Lg), px(sizes.ButtonCompactHeight + spacing.Loose))
 			else UDim2.fromOffset(px(spacing.Wide), px(sizes.UnitSelectionChip + spacing.Sm)),
 		AutomaticSize = Enum.AutomaticSize.XY,
-		backgroundColor = colors.Panel,
-		backgroundTransparency = transparency.PanelMuted,
-		strokeColor = colors.Stroke,
-		strokeTransparency = transparency.StrokeStrong,
-		padding = if compact then spacing.Lg else spacing.XXl,
+		backgroundColor = Color3.fromRGB(0, 0, 0), -- Pure black background for the overlay
+		backgroundTransparency = 0, -- Gradient will control the transparency!
+		stroke = false, -- No border contour
+		gradient = false, -- No default multi-color facet gradient
+		padding = if compact then spacing.Md else spacing.XXl,
 		layout = Enum.FillDirection.Vertical,
 		HorizontalAlignment = Enum.HorizontalAlignment.Left,
 		gap = if compact then spacing.Sm else spacing.Lg,
 		Active = false,
 		SizeConstraint = React.createElement("UISizeConstraint", {
 			MinSize = if compact
-				then Vector2.new(px(sizes.HudCompactMinWidth), 0)
+				then Vector2.new(px(sizes.HudCompactMinWidth + 16), 0)
 				else Vector2.new(px(sizes.HudMinWidth), 0),
 			MaxSize = if compact
-				then Vector2.new(px(sizes.HudCompactMaxWidth), px(sizes.HudCompactMaxHeight))
+				then Vector2.new(px(sizes.HudCompactMaxWidth + 24), px(sizes.HudCompactMaxHeight))
 				else Vector2.new(px(sizes.HudMaxWidth), px(sizes.HudMaxHeight)),
 		}),
 		children = {
-			Money = React.createElement(StatTile, {
+			Money = React.createElement(CompactStat, {
 				LayoutOrder = 1,
-				label = "DINERO",
+				label = "DINERO: ",
 				value = tostring(gold),
 				accent = colors.Amber,
 				compact = compact,
 			}),
-			Population = React.createElement(StatTile, {
-				LayoutOrder = 2,
-				label = "POBLACION",
-				value = `{populationUsed} / {populationCap}`,
+			Sep1 = SeparatorLine(2),
+			Population = React.createElement(CompactStat, {
+				LayoutOrder = 3,
+				label = "POBLACION: ",
+				value = `{populationUsed}/{populationCap}`,
 				accent = colors.Green,
 				compact = compact,
 			}),
-			Date = React.createElement(StatTile, {
-				LayoutOrder = 3,
-				label = "FECHA",
+			Sep2 = SeparatorLine(4),
+			Date = React.createElement(CompactStat, {
+				LayoutOrder = 5,
+				label = "FECHA: ",
 				value = formatDate(props.clock),
 				accent = colors.Stroke,
 				compact = compact,
 			}),
-			Nexo = nexoHealth(localNexo, 4, compact),
+			Sep3 = SeparatorLine(6),
+			Nexo = nexoHealth(localNexo, 7, compact),
+
+			HudGradient = React.createElement("UIGradient", {
+				Color = ColorSequence.new(Color3.fromRGB(0, 0, 0)),
+				Rotation = 0,
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.15), -- Nearly solid on the left edge (15% transparency)
+					NumberSequenceKeypoint.new(0.65, 0.40), -- Smooth fade-out in the middle
+					NumberSequenceKeypoint.new(1, 1), -- Fully transparent on the right
+				}),
+			}),
 		},
 	})
 
@@ -299,7 +483,12 @@ local function MatchHud(props)
 			clock = props.clock,
 			playerCards = props.playerCards,
 			diplomacySnapshot = props.diplomacySnapshot,
+			rosterDiplomacy = props.rosterDiplomacy,
+			localUserId = props.localUserId,
 			compact = compact,
+			onSelectPlayer = props.onSelectRosterPlayer,
+			onAction = props.onRequestDiplomacyAction,
+			onClose = props.onCloseRosterDiplomacy,
 		}),
 		LeftPanel = leftPanel,
 	})

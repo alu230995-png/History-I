@@ -35,4 +35,15 @@ function UIHelpers.isCompact(props): boolean
 		or viewportSize.Y <= breakpoints.CompactHeight
 end
 
+function UIHelpers.clampToViewport(value: number, viewportLimit: number, inset: number): number
+	return math.max(0, math.min(value, viewportLimit - px(inset)))
+end
+
+function UIHelpers.aspectRatio(ratio: number?, dominantAxis: Enum.DominantAxis?)
+	return {
+		AspectRatio = ratio or UITheme.AspectRatios.Icon,
+		DominantAxis = dominantAxis or Enum.DominantAxis.Height,
+	}
+end
+
 return table.freeze(UIHelpers)

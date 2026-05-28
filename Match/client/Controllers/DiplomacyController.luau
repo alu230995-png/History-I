@@ -42,6 +42,10 @@ local function findControlRig(instance: Instance?, controlRigFolder: Instance?):
 	return nil
 end
 
+local function getInputPosition(input: InputObject): Vector2
+	return Vector2.new(input.Position.X, input.Position.Y)
+end
+
 function DiplomacyController:KnitInit()
 	self._destroyed = false
 	self._trove = Trove.new()
@@ -53,6 +57,8 @@ function DiplomacyController:KnitInit()
 	self._playerState = nil
 	self._snapshot = nil
 	self._selectedPlayer = nil
+	self._selectionSource = nil
+	self._breakClientEndsAtById = {}
 	self._root = nil
 	self._screenGui = nil
 	self._raycastParams = RaycastParams.new()
@@ -73,10 +79,12 @@ function DiplomacyController:KnitStart()
 	self:_mountUi()
 
 	self._snapshot = self._diplomacyService:GetSnapshot()
+	self:_syncBreakCountdowns(self._snapshot)
 	self:_render()
 
 	self._trove:Add(self._diplomacyService.DiplomacySnapshotChanged:Connect(function(snapshot)
 		self._snapshot = snapshot
+		self:_syncBreakCountdowns(snapshot)
 		self:_render()
 	end))
 	self._trove:Add(self._gameService.PlayerStateChanged:Connect(function(_oldState: string, newState: string)
@@ -135,9 +143,9 @@ function DiplomacyController:_handleInputBegan(input: InputObject, gameProcessed
 
 	local pointerPosition = nil
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		pointerPosition = UserInputService:GetMouseLocation()
+		pointerPosition = self:_getMousePosition()
 	elseif input.UserInputType == Enum.UserInputType.Touch then
-		pointerPosition = Vector2.new(input.Position.X, input.Position.Y)
+		pointerPosition = self:_getPreciseTouchPosition(input)
 	else
 		return
 	end
@@ -153,6 +161,7 @@ function DiplomacyController:_handleInputBegan(input: InputObject, gameProcessed
 	end
 
 	self._selectedPlayer = player
+	self._selectionSource = "World"
 	self._menuCoordinator:RequestOpen(DiplomacyConfig.MenuIds.Diplomacy, function()
 		self:_clearSelection()
 	end)
@@ -180,6 +189,46 @@ function DiplomacyController:_isPointerOverUi(pointerPosition: Vector2): boolean
 	return if playerGui ~= nil and playerGui:IsA("PlayerGui")
 		then WorldInput.IsPointerBlocked(playerGui, pointerPosition)
 		else false
+end
+
+function DiplomacyController:_getMousePosition(): Vector2?
+	local mouseLocation = UserInputService:GetMouseLocation()
+	if mouseLocation.X >= 0 and mouseLocation.Y >= 0 then
+		return mouseLocation
+	end
+
+	return nil
+end
+
+function DiplomacyController:_getPreciseTouchPosition(input: InputObject): Vector2
+	return self:_getMousePosition() or getInputPosition(input)
+end
+
+function DiplomacyController:_syncBreakCountdowns(snapshot)
+	local activeBreakIds = {}
+	if snapshot ~= nil and type(snapshot.breaks) == "table" then
+		for _, breakRecord in snapshot.breaks do
+			if typeof(breakRecord.id) ~= "string" then
+				continue
+			end
+
+			activeBreakIds[breakRecord.id] = true
+			if self._breakClientEndsAtById[breakRecord.id] == nil then
+				local remainingSeconds = if typeof(breakRecord.remainingSeconds) == "number"
+					then breakRecord.remainingSeconds
+					else if typeof(breakRecord.endsAt) == "number"
+						then math.max(0, breakRecord.endsAt - os.clock())
+						else 0
+				self._breakClientEndsAtById[breakRecord.id] = os.clock() + remainingSeconds
+			end
+		end
+	end
+
+	for breakId in self._breakClientEndsAtById do
+		if activeBreakIds[breakId] ~= true then
+			self._breakClientEndsAtById[breakId] = nil
+		end
+	end
 end
 
 function DiplomacyController:_isAllied(userId: number): boolean
@@ -231,6 +280,32 @@ function DiplomacyController:_isAllianceFullWith(userId: number): boolean
 	return count > maxMembers
 end
 
+function DiplomacyController:_getPendingBreakForUserId(userId: number)
+	if self._snapshot == nil or type(self._snapshot.breaks) ~= "table" then
+		return nil
+	end
+
+	local localAlliance = self:_getAllianceForUserId(LOCAL_PLAYER.UserId)
+	if localAlliance == nil then
+		return nil
+	end
+
+	for _, breakRecord in self._snapshot.breaks do
+		if
+			breakRecord.allianceId == localAlliance.id
+			and (breakRecord.requesterUserId == LOCAL_PLAYER.UserId or breakRecord.requesterUserId == userId)
+		then
+			if typeof(breakRecord.id) == "string" then
+				breakRecord.clientEndsAt = self._breakClientEndsAtById[breakRecord.id]
+			end
+
+			return breakRecord
+		end
+	end
+
+	return nil
+end
+
 function DiplomacyController:_getActionState()
 	local selected = self._selectedPlayer
 	if selected == nil then
@@ -238,6 +313,15 @@ function DiplomacyController:_getActionState()
 	end
 
 	if self:_isAllied(selected.UserId) then
+		local pendingBreak = self:_getPendingBreakForUserId(selected.UserId)
+		if pendingBreak ~= nil then
+			local endsAt = if typeof(pendingBreak.clientEndsAt) == "number"
+				then pendingBreak.clientEndsAt
+				else pendingBreak.endsAt
+			local remainingSeconds = math.max(0, math.ceil((endsAt or 0) - os.clock()))
+			return "BreakPending", `ROMPIENDO {remainingSeconds}s`, false
+		end
+
 		return "Break", "ROMPER", true
 	end
 
@@ -248,18 +332,77 @@ function DiplomacyController:_getActionState()
 	return "Alliance", "ALIANZA", true
 end
 
+function DiplomacyController:SelectPlayerByUserId(userId: number): boolean
+	if not canUseDiplomacy(self._playerState) or typeof(userId) ~= "number" or userId == LOCAL_PLAYER.UserId then
+		return false
+	end
+
+	local player = Players:GetPlayerByUserId(userId)
+	if player == nil then
+		return false
+	end
+
+	self._selectedPlayer = player
+	self._selectionSource = "Roster"
+	self._menuCoordinator:RequestOpen(DiplomacyConfig.MenuIds.Diplomacy, function()
+		self:_clearSelection()
+	end)
+	self:_render()
+	return true
+end
+
+function DiplomacyController:RequestActionForUserId(userId: number)
+	if self._selectedPlayer == nil or self._selectedPlayer.UserId ~= userId then
+		if not self:SelectPlayerByUserId(userId) then
+			return nil
+		end
+	end
+
+	return self:_requestAction()
+end
+
+function DiplomacyController:CloseRosterDiplomacy()
+	self:_clearSelection()
+end
+
+function DiplomacyController:GetRosterDiplomacyState()
+	local selected = self._selectedPlayer
+	if selected == nil or self._selectionSource ~= "Roster" then
+		return nil
+	end
+
+	local actionKind, actionLabel, actionEnabled = self:_getActionState()
+	local pendingBreak = self:_getPendingBreakForUserId(selected.UserId)
+
+	return {
+		userId = selected.UserId,
+		name = selected.DisplayName,
+		actionKind = actionKind,
+		actionLabel = actionLabel,
+		actionEnabled = actionEnabled,
+		isAllied = self:_isAllied(selected.UserId),
+		pendingBreakEndsAt = if pendingBreak ~= nil then pendingBreak.clientEndsAt or pendingBreak.endsAt else nil,
+	}
+end
+
 function DiplomacyController:_requestAction()
 	local selected = self._selectedPlayer
 	if selected == nil then
-		return
+		return nil
 	end
 
+	local result = nil
 	if self:_isAllied(selected.UserId) then
-		self._diplomacyService:RequestBreakAlliance(selected.UserId)
+		if self:_getPendingBreakForUserId(selected.UserId) ~= nil then
+			return nil
+		end
+
+		result = self._diplomacyService:RequestBreakAlliance(selected.UserId)
 	else
-		self._diplomacyService:RequestAlliance(selected.UserId)
+		result = self._diplomacyService:RequestAlliance(selected.UserId)
 	end
 	self:_render()
+	return result
 end
 
 function DiplomacyController:_respondInvite(inviteId: string, accepted: boolean)
@@ -268,6 +411,7 @@ end
 
 function DiplomacyController:_clearSelection()
 	self._selectedPlayer = nil
+	self._selectionSource = nil
 	if self._menuCoordinator ~= nil then
 		self._menuCoordinator:Close(DiplomacyConfig.MenuIds.Diplomacy)
 	end
@@ -285,7 +429,7 @@ function DiplomacyController:_render()
 	end
 
 	local actionKind, actionLabel, actionEnabled = self:_getActionState()
-	local selected = if self._selectedPlayer ~= nil
+	local selected = if self._selectedPlayer ~= nil and self._selectionSource ~= "Roster"
 		then {
 			userId = self._selectedPlayer.UserId,
 			name = self._selectedPlayer.DisplayName,
@@ -301,6 +445,8 @@ function DiplomacyController:_render()
 		actionLabel = actionLabel,
 		actionEnabled = actionEnabled,
 		invites = invites,
+		viewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero,
+		isMobile = UserInputService.TouchEnabled,
 		getPlayerName = function(userId: number)
 			return self:_getPlayerName(userId)
 		end,
@@ -327,6 +473,7 @@ function DiplomacyController:Destroy()
 	self._destroyed = true
 	self._trove:Destroy()
 	table.clear(self._raycastInclude)
+	table.clear(self._breakClientEndsAtById)
 end
 
 return DiplomacyController

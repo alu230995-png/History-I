@@ -27,15 +27,14 @@ local function NexoTimerUI(props)
 
 	return React.createElement(Panel, {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, px(spacing.Modal)),
+		Position = UDim2.new(0.5, 0, 0, px(spacing.Sm)),
 		AutomaticSize = Enum.AutomaticSize.XY,
-		backgroundColor = colors.Panel,
-		backgroundTransparency = transparency.PanelSoft,
-		strokeColor = if visible then colors.Amber else colors.Green,
-		strokeTransparency = transparency.StrokeStrong,
+		backgroundTransparency = 1,
+		stroke = false,
+		gradient = false,
 		padding = {
-			Y = spacing.XXl,
-			X = spacing.Loose,
+			Y = spacing.Sm,
+			X = spacing.Sm,
 		},
 		layout = Enum.FillDirection.Vertical,
 		gap = spacing.Xs,
@@ -47,6 +46,8 @@ local function NexoTimerUI(props)
 				variant = "Title",
 				Text = if visible then "SELECCION DE NEXO" else "NEXO ASIGNADO",
 				TextSize = textSizes.Button,
+				TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+				TextStrokeTransparency = 0.4,
 			}),
 			Timer = React.createElement(Text, {
 				LayoutOrder = 2,
@@ -56,6 +57,8 @@ local function NexoTimerUI(props)
 				TextColor3 = if visible then colors.Amber else colors.Green,
 				TextSize = if visible then textSizes.Timer else textSizes.Body,
 				TextWrapped = true,
+				TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+				TextStrokeTransparency = 0.4,
 			}, {
 				Width = React.createElement("UISizeConstraint", {
 					MaxSize = Vector2.new(px(sizes.NexoBuildCompactMaxWidth + spacing.Bottom), px(sizes.ButtonHeight)),

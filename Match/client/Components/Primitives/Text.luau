@@ -56,11 +56,15 @@ local function TacticalText(props)
 		Text = props.Text or "",
 		TextColor3 = props.TextColor3 or variant.color,
 		TextSize = px(props.TextSize or variant.size),
+		TextScaled = props.TextScaled == true,
 		TextWrapped = props.TextWrapped == true,
 		TextTruncate = props.TextTruncate,
 		TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Center,
 		TextYAlignment = props.TextYAlignment or Enum.TextYAlignment.Center,
+		TextStrokeColor3 = props.TextStrokeColor3,
+		TextStrokeTransparency = props.TextStrokeTransparency,
 		Visible = props.Visible,
+		ZIndex = props.ZIndex,
 	}, props.children)
 end
 

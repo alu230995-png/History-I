@@ -27,7 +27,7 @@ local function actionButton(
 	return React.createElement(TacticalButton, {
 		LayoutOrder = layoutOrder,
 		Size = if compact
-			then UDim2.new(1, 0, 0, px(sizes.ButtonHeight))
+			then UDim2.new(1, 0, 0, px(sizes.ButtonCompactHeight))
 			else UDim2.fromOffset(
 				px(sizes.ButtonWideWidth + sizes.ButtonMediumWidth / 2),
 				px(sizes.ButtonHeight + spacing.Xxs)
@@ -35,7 +35,7 @@ local function actionButton(
 		label = label,
 		accent = accent,
 		enabled = enabled,
-		TextSize = textSizes.Meta,
+		TextSize = if compact then textSizes.Button else textSizes.Meta,
 		onActivated = activated,
 	})
 end
@@ -61,9 +61,9 @@ local function NexoSelectionMenu(props)
 	return React.createElement("Frame", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = colors.Scrim,
-		BackgroundTransparency = transparency.Scrim,
+		BackgroundTransparency = 0.85, -- Sleek, very subtle dark vignette
 		BorderSizePixel = 0,
-		Active = true,
+		Active = false,
 	}, {
 		Panel = React.createElement(Panel, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -79,26 +79,28 @@ local function NexoSelectionMenu(props)
 			backgroundTransparency = transparency.PanelLight,
 			strokeColor = if nexo.canSelect then colors.Green else colors.Red,
 			strokeTransparency = transparency.StrokeStrong,
+			gradientMid = if nexo.canSelect then colors.PanelFacet else colors.PanelPressed,
 			padding = {
-				Y = spacing.Modal,
-				X = spacing.Modal,
+				Y = if compact then spacing.Panel else spacing.Modal,
+				X = if compact then spacing.Panel else spacing.Modal,
 			},
 			layout = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Left,
 			VerticalAlignment = Enum.VerticalAlignment.Top,
-			gap = spacing.Wide,
+			gap = if compact then spacing.Lg else spacing.Wide,
 			SizeConstraint = React.createElement("UISizeConstraint", {
 				MaxSize = Vector2.new(panelMaxWidth, viewportSize.Y - px(spacing.Modal + spacing.Loose)),
 			}),
 			children = {
 				Title = React.createElement(Text, {
 					LayoutOrder = 1,
-					Size = UDim2.new(1, 0, 0, px(textSizes.Timer + spacing.XXl)),
+					Size = UDim2.new(1, 0, 0, px(if compact then textSizes.Heading * 0.8 else textSizes.Timer + spacing.XXl)),
 					variant = "Title",
 					Text = string.upper(nexo.nombre),
-					TextSize = textSizes.Heading,
+					TextSize = if compact then textSizes.Body else textSizes.Heading,
 					TextXAlignment = Enum.TextXAlignment.Left,
 					TextWrapped = true,
+					TextScaled = compact,
 				}),
 				Status = React.createElement(Text, {
 					LayoutOrder = 2,

@@ -29,7 +29,7 @@ end
 local function blocksWorldInput(guiObject: GuiObject): boolean
 	local behavior = getBehavior(guiObject)
 	if behavior == WorldInput.Behaviors.PassThrough then
-		return false
+		return guiObject:IsA("GuiButton") or guiObject:IsA("TextBox")
 	end
 
 	if behavior == WorldInput.Behaviors.Block then

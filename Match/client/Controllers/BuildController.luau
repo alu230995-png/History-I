@@ -177,6 +177,10 @@ local function normalizeRotation(rotation: number): number
 	return (math.round(rotation / 60) * 60) % 360
 end
 
+local function getInputPosition(input: InputObject): Vector2
+	return Vector2.new(input.Position.X, input.Position.Y)
+end
+
 function BuildController:KnitInit()
 	self._destroyed = false
 	self._trove = Trove.new()
@@ -559,7 +563,7 @@ function BuildController:_bindBuildingInputs(trove)
 		end
 
 		if input.UserInputType == Enum.UserInputType.Touch then
-			local touchPosition = Vector2.new(input.Position.X, input.Position.Y)
+			local touchPosition = self:_getPreciseTouchPosition(input)
 			if self:_isPointerOverBuildUi(touchPosition) then
 				return
 			end
@@ -600,8 +604,12 @@ function BuildController:_bindBuildingInputs(trove)
 			or input.UserInputType == Enum.UserInputType.MouseMovement
 		then
 			local pointerPosition = if input.UserInputType == Enum.UserInputType.Touch
-				then Vector2.new(input.Position.X, input.Position.Y)
-				else UserInputService:GetMouseLocation()
+				then self:_getPreciseTouchPosition(input)
+				else self:_getMousePosition()
+			if pointerPosition == nil then
+				return
+			end
+
 			if self:_isPointerOverBuildUi(pointerPosition) then
 				return
 			end
@@ -630,6 +638,19 @@ function BuildController:_isPointerOverBuildUi(pointerPosition: Vector2): boolea
 	return WorldInput.IsPointerBlocked(playerGui, pointerPosition)
 end
 
+function BuildController:_getMousePosition(): Vector2?
+	local mouseLocation = UserInputService:GetMouseLocation()
+	if mouseLocation.X >= 0 and mouseLocation.Y >= 0 then
+		return mouseLocation
+	end
+
+	return nil
+end
+
+function BuildController:_getPreciseTouchPosition(input: InputObject): Vector2
+	return self:_getMousePosition() or getInputPosition(input)
+end
+
 function BuildController:_renderBuildUi(force: boolean?)
 	if self._root == nil then
 		return
@@ -643,6 +664,7 @@ function BuildController:_renderBuildUi(force: boolean?)
 	local canRotate = visible and BuildingConfig.CanRotate(self._selectedBuildingType)
 	local socketName = if target ~= nil then target.socketName else self._previewReason
 	local buildingName = if definition ~= nil then definition.DisplayName else nil
+	local viewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
 	if buildingName ~= nil and self._movingBuildingId ~= nil then
 		buildingName = `MOVER {buildingName}`
 	end
@@ -655,6 +677,7 @@ function BuildController:_renderBuildUi(force: boolean?)
 		tostring(canRotate),
 		tostring(socketName),
 		tostring(self._rotation),
+		tostring(viewportSize),
 	}, "|")
 
 	if not force and signature == self._lastUiSignature then
@@ -669,6 +692,8 @@ function BuildController:_renderBuildUi(force: boolean?)
 		canRotate = canRotate,
 		buildingName = buildingName,
 		socketName = socketName,
+		viewportSize = viewportSize,
+		isMobile = UserInputService.TouchEnabled,
 		onRotate = function()
 			self:RotateSelectedBuilding(1)
 		end,
@@ -701,12 +726,7 @@ function BuildController:_getPointerPosition(): Vector2?
 		return self._lastMousePosition
 	end
 
-	local mouseLocation = UserInputService:GetMouseLocation()
-	if mouseLocation.X >= 0 and mouseLocation.Y >= 0 then
-		return mouseLocation
-	end
-
-	return nil
+	return self:_getMousePosition()
 end
 
 function BuildController:_updateTarget()

@@ -12,6 +12,7 @@ local Panel = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChi
 local ProgressBar = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("ProgressBar"))
 local TacticalButton = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("TacticalButton"))
 local Text = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("Text"))
+local UIHelpers = require(script.Parent.Parent:WaitForChild("Primitives"):WaitForChild("UIHelpers"))
 
 local px = UITheme.sp
 local colors = UITheme.Colors
@@ -20,15 +21,24 @@ local spacing = UITheme.Spacing
 local textSizes = UITheme.TextSizes
 local transparency = UITheme.Transparency
 
-local function actionButton(label: string, layoutOrder: number, accent: Color3, enabled: boolean, activated)
+local function actionButton(
+	label: string,
+	layoutOrder: number,
+	accent: Color3,
+	enabled: boolean,
+	activated,
+	compact: boolean?
+)
 	return React.createElement(TacticalButton, {
 		LayoutOrder = layoutOrder,
-		width = sizes.ButtonLargeWidth + spacing.XXl,
-		height = sizes.ButtonHeight,
+		fullWidth = false,
+		width = if compact then sizes.ButtonMediumWidth else sizes.ButtonLargeWidth + spacing.XXl,
+		height = if compact then sizes.ButtonCompactHeight else sizes.ButtonHeight,
 		label = label,
 		accent = accent,
 		enabled = enabled,
-		TextSize = textSizes.Button,
+		ZIndex = 12, -- Enforce rendering on top of the black capsule background!
+		TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
 		onActivated = activated,
 	})
 end
@@ -49,11 +59,12 @@ local function unitCard(unitType: string, layoutOrder: number, queueFull: boolea
 
 	local canQueue = not queueFull
 	local textColor = if canQueue then colors.Text else colors.MutedText
+	local cardColor = if canQueue then colors.PanelRaised else colors.PanelPressed
 
 	return React.createElement("TextButton", {
 		LayoutOrder = layoutOrder,
 		Size = UDim2.fromOffset(px(sizes.UnitCardWidth), px(sizes.UnitCardHeight)),
-		BackgroundColor3 = if canQueue then colors.PanelRaised else colors.PanelPressed,
+		BackgroundColor3 = cardColor,
 		BackgroundTransparency = if canQueue then transparency.PanelLight else transparency.PanelMuted,
 		BorderSizePixel = 0,
 		AutoButtonColor = canQueue,
@@ -61,8 +72,20 @@ local function unitCard(unitType: string, layoutOrder: number, queueFull: boolea
 		Text = "",
 		[React.Event.Activated] = if canQueue then activated else nil,
 	}, {
+		AspectRatio = React.createElement("UIAspectRatioConstraint", {
+			AspectRatio = UITheme.AspectRatios.UnitCard,
+			DominantAxis = Enum.DominantAxis.Width,
+		}),
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UITheme.Radii.Control,
+		}),
+		LowPolyGradient = React.createElement("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, colors.PanelFacetCold),
+				ColorSequenceKeypoint.new(0.58, cardColor),
+				ColorSequenceKeypoint.new(1, colors.PanelFacetDark),
+			}),
+			Rotation = -26,
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = if canQueue then colors.Amber else colors.Stroke,
@@ -99,13 +122,32 @@ local function unitCard(unitType: string, layoutOrder: number, queueFull: boolea
 			TextSize = textSizes.Small,
 			TextWrapped = true,
 		}),
-		Cost = React.createElement(Text, {
+		CostBadge = React.createElement("Frame", {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, px(textSizes.Body)),
-			variant = "Mono",
-			Text = `{definition.Gold or 0} ORO | {definition.TrainingTime or 0}S`,
-			TextColor3 = if canQueue then colors.Amber else colors.MutedText,
-			TextSize = textSizes.Small,
+			Size = UDim2.new(1, 0, 0, px(textSizes.Small + spacing.Md)),
+			BackgroundColor3 = if canQueue then colors.PanelFacetCold else colors.PanelDim,
+			BackgroundTransparency = 0.25,
+			BorderSizePixel = 0,
+		}, {
+			Corner = React.createElement("UICorner", {
+				CornerRadius = UITheme.Radii.Control,
+			}),
+			Stroke = React.createElement("UIStroke", {
+				Color = if canQueue then colors.Amber else colors.Stroke,
+				Thickness = px(1),
+				Transparency = 0.5,
+			}),
+			Layout = React.createElement("UIListLayout", {
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+			}),
+			Text = React.createElement(Text, {
+				Size = UDim2.fromScale(1, 1),
+				variant = "Mono",
+				Text = `{definition.Gold or 0} ORO | {definition.TrainingTime or 0}S`,
+				TextColor3 = if canQueue then colors.Amber else colors.MutedText,
+				TextSize = textSizes.Small - 1,
+			}),
 		}),
 	})
 end
@@ -122,6 +164,10 @@ local function queueSlot(entry, layoutOrder: number)
 		BackgroundTransparency = if entry ~= nil then transparency.PanelLight else transparency.PanelDim,
 		BorderSizePixel = 0,
 	}, {
+		AspectRatio = React.createElement("UIAspectRatioConstraint", {
+			AspectRatio = UITheme.AspectRatios.QueueSlot,
+			DominantAxis = Enum.DominantAxis.Height,
+		}),
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UITheme.Radii.Control,
 		}),
@@ -258,15 +304,27 @@ local function BuildingMenu(props)
 	local maxHp = if typeof(props.maxHp) == "number" and props.maxHp > 0 then props.maxHp else 1
 	local healthText = `{math.floor(hp)} / {math.floor(maxHp)}`
 	local productionUnits = BuildingConfig.GetProductionUnits(buildingType)
+	local viewportSize = UIHelpers.getViewportSize(props)
+	local compact = UIHelpers.isCompact(props)
+	local panelWidth = if compact
+		then math.max(
+			px(sizes.CompactPanelMinWidth),
+			math.min(px(sizes.CompactPanelWidth), viewportSize.X - px(spacing.Bottom + spacing.Xxs))
+		)
+		else px(sizes.PanelWidth + spacing.Modal)
 
 	return React.createElement(Panel, {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -px(sizes.ButtonMediumWidth - spacing.Sm)),
-		AutomaticSize = Enum.AutomaticSize.XY,
+		AnchorPoint = if compact then Vector2.new(1, 1) else Vector2.new(0.5, 1),
+		Position = if compact
+			then UDim2.new(1, -px(spacing.Lg), 1, -px(spacing.Bottom))
+			else UDim2.new(0.5, 0, 1, -px(sizes.ButtonMediumWidth - spacing.Sm)),
+		Size = UDim2.fromOffset(panelWidth, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		backgroundColor = colors.Panel,
 		backgroundTransparency = transparency.Panel,
-		strokeColor = colors.Stroke,
+		strokeColor = if canEdit then colors.Cyan else colors.Stroke, -- Responsive cyberpunk color-coding
 		strokeTransparency = transparency.StrokeStrong,
+		gradientMid = colors.PanelFacetCold,
 		padding = {
 			Y = spacing.Panel,
 			X = spacing.Wide,
@@ -275,22 +333,43 @@ local function BuildingMenu(props)
 		gap = spacing.XXl,
 		Active = true,
 		children = {
-			Title = React.createElement(Text, {
+			Header = React.createElement("Frame", {
 				LayoutOrder = 1,
-				Size = UDim2.fromOffset(px(sizes.PanelWidth), px(spacing.Bottom)),
-				variant = "Title",
-				Text = string.upper(buildingType),
-				TextWrapped = true,
+				Size = UDim2.new(1, 0, 0, if compact then px(sizes.ButtonCompactHeight) else px(sizes.ButtonHeight)),
+				BackgroundTransparency = transparency.Clear,
+			}, {
+				Title = React.createElement(Text, {
+					AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.fromScale(0, 0.5),
+					Size = UDim2.new(1, -px(sizes.ButtonSmallWidth + spacing.Md), 1, 0),
+					variant = "Title",
+					Text = string.upper(buildingType),
+					TextColor3 = if canEdit then colors.Cyan else colors.Text,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextWrapped = true,
+					TextScaled = compact,
+				}),
+				Close = React.createElement(TacticalButton, {
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.fromScale(1, 0.5),
+					width = if compact then sizes.ButtonSmallWidth else sizes.ButtonMediumWidth,
+					height = if compact then sizes.ButtonCompactHeight else sizes.ButtonHeight,
+					label = "CERRAR",
+					accent = colors.Red,
+					TextSize = if compact then textSizes.ButtonSmall else textSizes.Button,
+					onActivated = props.onClose,
+				}),
 			}),
 			Health = React.createElement(Text, {
 				LayoutOrder = 2,
-				Size = UDim2.fromOffset(px(sizes.PanelWidth), px(textSizes.Heading)),
+				Size = UDim2.new(1, 0, 0, px(textSizes.Heading)),
 				variant = "Mono",
 				Text = `HP {healthText}`,
 				TextSize = textSizes.Meta,
 			}),
 			Actions = React.createElement("Frame", {
 				LayoutOrder = 3,
+				Size = if compact then UDim2.new(1, 0, 0, px(sizes.ButtonCompactHeight)) else nil,
 				AutomaticSize = Enum.AutomaticSize.XY,
 				BackgroundTransparency = transparency.Clear,
 			}, {
@@ -301,9 +380,8 @@ local function BuildingMenu(props)
 					SortOrder = Enum.SortOrder.LayoutOrder,
 					Padding = UDim.new(0, px(spacing.XXl)),
 				}),
-				Move = actionButton("MOVER", 1, colors.Amber, canEdit, props.onMove),
-				Destroy = actionButton("DESTRUIR", 2, colors.Red, canEdit, props.onDestroy),
-				Close = actionButton("CERRAR", 3, colors.Stroke, true, props.onClose),
+				Move = actionButton("MOVER", 1, colors.Amber, canEdit, props.onMove, compact),
+				Destroy = actionButton("DESTRUIR", 2, colors.Red, canEdit, props.onDestroy, compact),
 			}),
 			Barracks = barracksPanel({
 				canEdit = canEdit,

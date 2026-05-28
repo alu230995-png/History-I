@@ -26,6 +26,7 @@ function MatchHudController:KnitInit()
 	self._clockService = nil
 	self._nexoService = nil
 	self._diplomacyService = nil
+	self._diplomacyController = nil
 	self._resources = nil
 	self._clock = nil
 	self._nexoSnapshot = nil
@@ -36,6 +37,7 @@ function MatchHudController:KnitInit()
 	self._screenGui = nil
 	self._camera = Workspace.CurrentCamera
 	self._lastViewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
+	self._lastDiplomacyCountdownSeconds = nil
 end
 
 function MatchHudController:KnitStart()
@@ -43,6 +45,7 @@ function MatchHudController:KnitStart()
 	self._clockService = Knit.GetService("MatchClockService")
 	self._nexoService = Knit.GetService("NexoService")
 	self._diplomacyService = Knit.GetService("DiplomacyService")
+	self._diplomacyController = Knit.GetController("DiplomacyController")
 	self:_mountUi()
 
 	self._resources = self._resourceService:GetSnapshot()
@@ -83,6 +86,19 @@ function MatchHudController:KnitStart()
 		local viewportSize = if self._camera ~= nil then self._camera.ViewportSize else Vector2.zero
 		if viewportSize ~= self._lastViewportSize then
 			self._lastViewportSize = viewportSize
+			self:_render()
+			return
+		end
+
+		local rosterDiplomacy = if self._diplomacyController ~= nil
+			then self._diplomacyController:GetRosterDiplomacyState()
+			else nil
+		local pendingBreakEndsAt = if rosterDiplomacy ~= nil then rosterDiplomacy.pendingBreakEndsAt else nil
+		local countdownSeconds = if typeof(pendingBreakEndsAt) == "number"
+			then math.max(0, math.ceil(pendingBreakEndsAt - os.clock()))
+			else nil
+		if countdownSeconds ~= self._lastDiplomacyCountdownSeconds then
+			self._lastDiplomacyCountdownSeconds = countdownSeconds
 			self:_render()
 		end
 	end))
@@ -144,6 +160,9 @@ function MatchHudController:_render()
 	end
 
 	self._root:render(React.createElement(MatchHud, {
+		rosterDiplomacy = if self._diplomacyController ~= nil
+			then self._diplomacyController:GetRosterDiplomacyState()
+			else nil,
 		resources = self._resources,
 		clock = self._clock,
 		nexoSnapshot = self._nexoSnapshot,
@@ -151,6 +170,23 @@ function MatchHudController:_render()
 		playerCards = self._playerCards,
 		localUserId = LOCAL_PLAYER.UserId,
 		viewportSize = self._lastViewportSize,
+		onSelectRosterPlayer = function(userId: number)
+			if self._diplomacyController ~= nil and self._diplomacyController:SelectPlayerByUserId(userId) then
+				self:_render()
+			end
+		end,
+		onRequestDiplomacyAction = function(userId: number)
+			if self._diplomacyController ~= nil then
+				self._diplomacyController:RequestActionForUserId(userId)
+				self:_render()
+			end
+		end,
+		onCloseRosterDiplomacy = function()
+			if self._diplomacyController ~= nil then
+				self._diplomacyController:CloseRosterDiplomacy()
+				self:_render()
+			end
+		end,
 	}))
 end
 

@@ -10,6 +10,7 @@ local Trove = require(Packages:WaitForChild("Trove"))
 
 local MatchClockConfig = require(Shared:WaitForChild("Constants"):WaitForChild("MatchClockConfig"))
 local MatchEconomyConfig = require(Shared:WaitForChild("Constants"):WaitForChild("MatchEconomyConfig"))
+local MatchStates = require(Shared:WaitForChild("Constants"):WaitForChild("MatchStates"))
 
 type ResourceState = {
 	Gold: number,
@@ -55,6 +56,7 @@ function MatchResourceService:KnitInit()
 	self._incomeFractions = {}
 	self._incomeToken = 0
 	self._clockService = nil
+	self._gameService = nil
 	self._nexoService = nil
 	self._buildService = nil
 	self.ResourcesChanged = Signal.new()
@@ -63,6 +65,7 @@ end
 
 function MatchResourceService:KnitStart()
 	self._clockService = Knit.GetService("MatchClockService")
+	self._gameService = Knit.GetService("GameService")
 	self._nexoService = Knit.GetService("NexoService")
 	self._buildService = Knit.GetService("BuildService")
 
@@ -195,6 +198,10 @@ function MatchResourceService:_startIncomeLoop()
 end
 
 function MatchResourceService:_awardIncomeTick(deltaSeconds: number)
+	if self._gameService ~= nil and self._gameService:GetMatchState() ~= MatchStates.Playing then
+		return
+	end
+
 	local weekSeconds = math.max((MatchClockConfig.TickSeconds or 1) * (MatchEconomyConfig.DaysPerWeek or 7), 0.001)
 
 	for _, player in Players:GetPlayers() do

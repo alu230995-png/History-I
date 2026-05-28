@@ -20,10 +20,12 @@ export type AllianceInvite = {
 }
 
 export type AllianceBreak = {
+	id: string,
 	allianceId: string,
 	requesterUserId: number,
 	targetUserId: number?,
 	endsAt: number,
+	remainingSeconds: number?,
 }
 
 export type AllianceSnapshot = {
